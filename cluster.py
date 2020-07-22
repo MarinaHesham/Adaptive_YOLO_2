@@ -33,7 +33,7 @@ if __name__ == "__main__":
                     objects_adjacency_matrix[obj1,obj2] += 1
                     objects_adjacency_matrix[obj2,obj1] += 1
 
-    np.savetxt("proximity_adjacency_matrix.csv", objects_adjacency_matrix, delimiter=",", fmt='%d')
+    np.savetxt("co-occurence_adjacency_matrix.csv", objects_adjacency_matrix, delimiter=",", fmt='%d')
     
     #### Cluster the objects according to the adjacency matrix #####
 
@@ -94,8 +94,8 @@ if __name__ == "__main__":
         for key in clusters.keys():
             f.write("%s"%(key))
             for cls_ in clusters[key]:
-                f.write("%s"%(cls_))
-
+                f.write(",%s"%(cls_))
+            f.write("\n")
 
     for key in clusters.keys():
         print(">>>>")
