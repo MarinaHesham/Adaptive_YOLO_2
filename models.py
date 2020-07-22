@@ -23,7 +23,7 @@ def create_modules(module_defs):
     for module_i, module_def in enumerate(module_defs):
         modules = nn.Sequential()
 
-        if module_def["type"] == "convolutional":
+        if module_def["type"] == "convolutional" or module_def["type"] == "split1" or module_def["type"] == "split2":
             bn = int(module_def["batch_normalize"])
             filters = int(module_def["filters"])
             kernel_size = int(module_def["size"])
