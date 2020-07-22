@@ -34,3 +34,18 @@ def parse_data_config(path):
         key, value = line.split('=')
         options[key.strip()] = value.strip()
     return options
+
+def parse_clusters_config(path):
+    """Parses the clusters configuration file"""
+    print("Reading clusters file")
+
+    clusters = []
+    with open(path, 'r') as f:
+        for line in f:
+            cs = line.split(",")
+            clusters.append([int(c) for c in cs])
+
+    for i, clus in enumerate(clusters):
+        print("Cluster ", i, "has ", len(clus), " classes")
+
+    return clusters
