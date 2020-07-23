@@ -42,7 +42,7 @@ class AdaptiveYOLO(nn.Module):
             to_delete = []
             for i, ele in enumerate(modified_targets[:,1]):
                 if ele in active_classes:
-                    modified_targets[i,1] = torch.tensor(self.mode_dicts_class_to_cluster[self.mode][int(ele)], dtype=torch.float64)
+                    modified_targets[i,1] = torch.tensor(self.mode_dicts_class_to_cluster[self.mode][int(ele)], dtype=torch.float64, device=x.get_device())
                 else:
                     to_delete.append(i)
             # print(">>>>>>>>>>>> ", len(to_delete), " Deleted ", modified_targets.shape[0], "Remaining ")
@@ -98,10 +98,10 @@ class AdaptiveYOLO(nn.Module):
         # print("Model output is ", yolo_outputs)
         for l, layer in enumerate(yolo_outputs):
             num_classes = layer.shape[-1]
-            temp = torch.zeros(layer.shape[0],layer.shape[1],85-layer.shape[-1])
+            temp = torch.zeros(layer.shape[0],layer.shape[1],85-layer.shape[-1], device=x.get_device())
             yolo_outputs[l] = torch.cat((layer,temp), dim=2)
 
-            full_detection = torch.zeros(layer.shape[0],layer.shape[1], 85)   
+            full_detection = torch.zeros(layer.shape[0],layer.shape[1], 85, device=x.get_device())   
             full_detection[:, :, 0:5] = layer[:, :, 0:5]
             full_detection[:, :, self.mode_classes_list[self.mode]] = layer[:, :, 5:]
 
