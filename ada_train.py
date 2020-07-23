@@ -117,10 +117,10 @@ if __name__ == "__main__":
         "conf_noobj",
     ]
 
-    ########### Train for each cluster ############
-
-    for mode_i in range(len(clusters)):
-        ####### 1. Prepare cluster data #######
+    #### Alternate between clusters at each epoch
+    mode_i = 0
+    for epoch in range(opt.epochs):
+        model.mode = mode_i
         dataset = ListDataset(train_path, augment=True, multiscale=opt.multiscale_training)
         
         dataloader = torch.utils.data.DataLoader(
@@ -132,77 +132,65 @@ if __name__ == "__main__":
             collate_fn=dataset.collate_fn,
         )
 
-        ####### 1. Start training #######
-        # ## Freeze cluster 2 parameters 
-        # c2_start = 25
+        model.train()
+        start_time = time.time()
+        for batch_i, (_, imgs, targets) in enumerate(dataloader):
+            batches_done = len(dataloader) * epoch + batch_i
 
-        # # for i, (name, param) in enumerate(model.named_parameters()):
-        # #     if i >= c2_start:
-        # #         print("Freeze ", name, " ", i)
-        # #         param.requires_grad = False
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
 
-        model.mode = mode_i
-        
-        for epoch in range(opt.epochs):
-            model.train()
-            start_time = time.time()
-            for batch_i, (_, imgs, targets) in enumerate(dataloader):
-                batches_done = len(dataloader) * epoch + batch_i
+            loss, outputs = model(imgs, targets)
 
-                imgs = Variable(imgs.to(device))
-                targets = Variable(targets.to(device), requires_grad=False)
+            if outputs == None:
+                continue
+            loss.backward()
 
-                loss, outputs = model(imgs, targets)
+            if batches_done % opt.gradient_accumulations:
+                # Accumulates gradient before each step
+                optimizer.step()
+                optimizer.zero_grad()
 
-                if outputs == None:
-                    continue
-                loss.backward()
+            # ----------------
+            #   Log progress
+            # ----------------
 
-                if batches_done % opt.gradient_accumulations:
-                    # Accumulates gradient before each step
-                    optimizer.step()
-                    optimizer.zero_grad()
+            log_str = "\n---- [Cluster %d, Epoch %d/%d, Batch %d/%d] ----\n" % (mode_i, epoch, opt.epochs, batch_i, len(dataloader))
 
-                # ----------------
-                #   Log progress
-                # ----------------
+            metric_table = [["Metrics", *[f"YOLO Layer {i}" for i in range(len(model.yolo_layers))]]]
 
-                log_str = "\n---- [Cluster %d, Epoch %d/%d, Batch %d/%d] ----\n" % (mode_i, epoch, opt.epochs, batch_i, len(dataloader))
+            # Log metrics at each YOLO layer
+            for i, metric in enumerate(metrics):
+                formats = {m: "%.6f" for m in metrics}
+                formats["grid_size"] = "%2d"
+                formats["cls_acc"] = "%.2f%%"
+                row_metrics = [formats[metric] % yolo.metrics.get(metric, 0) for yolo in model.yolo_layers]
+                metric_table += [[metric, *row_metrics]]
 
-                metric_table = [["Metrics", *[f"YOLO Layer {i}" for i in range(len(model.yolo_layers))]]]
+                # Tensorboard logging
+                tensorboard_log = []
+                for j, yolo in enumerate(model.yolo_layers):
+                    for name, metric in yolo.metrics.items():
+                        if name != "grid_size":
+                            tensorboard_log += [(f"{name}_{j+1}", metric)]
+                tensorboard_log += [("loss", loss.item())]
+                logger.list_of_scalars_summary(tensorboard_log, batches_done)
 
-                # Log metrics at each YOLO layer
-                for i, metric in enumerate(metrics):
-                    formats = {m: "%.6f" for m in metrics}
-                    formats["grid_size"] = "%2d"
-                    formats["cls_acc"] = "%.2f%%"
-                    row_metrics = [formats[metric] % yolo.metrics.get(metric, 0) for yolo in model.yolo_layers]
-                    metric_table += [[metric, *row_metrics]]
+            log_str += AsciiTable(metric_table).table
+            log_str += f"\nTotal loss {loss.item()}"
 
-                    # Tensorboard logging
-                    tensorboard_log = []
-                    for j, yolo in enumerate(model.yolo_layers):
-                        for name, metric in yolo.metrics.items():
-                            if name != "grid_size":
-                                tensorboard_log += [(f"{name}_{j+1}", metric)]
-                    tensorboard_log += [("loss", loss.item())]
-                    logger.list_of_scalars_summary(tensorboard_log, batches_done)
+            # Determine approximate time left for epoch
+            epoch_batches_left = len(dataloader) - (batch_i + 1)
+            time_left = datetime.timedelta(seconds=epoch_batches_left * (time.time() - start_time) / (batch_i + 1))
+            log_str += f"\n---- ETA {time_left}"
 
-                log_str += AsciiTable(metric_table).table
-                log_str += f"\nTotal loss {loss.item()}"
+            print(log_str)
 
-                # Determine approximate time left for epoch
-                epoch_batches_left = len(dataloader) - (batch_i + 1)
-                time_left = datetime.timedelta(seconds=epoch_batches_left * (time.time() - start_time) / (batch_i + 1))
-                log_str += f"\n---- ETA {time_left}"
+            model.seen += imgs.size(0)
 
-                print(log_str)
-
-                model.seen += imgs.size(0)
-
-                if batch_i % opt.checkpoint_interval == 0:
-                    torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (mode_i, batch_i))
-        
+            if batch_i % opt.checkpoint_interval == 0:
+                torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (mode_i, batch_i))
+    
         print(f"\n---- Evaluating Model on Cluster ----", mode_i)
         # Evaluate the model on the validation set
         precision, recall, AP, f1, ap_class = evaluate(
@@ -230,5 +218,7 @@ if __name__ == "__main__":
         print(f"---- mAP {AP.mean()}")
 
         torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
+        mode_i = (mode_i + 1) % len(clusters)
+
 
     torch.save(model.state_dict(), "checkpoints/yolov3_ada.pth")
