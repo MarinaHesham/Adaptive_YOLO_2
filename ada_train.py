@@ -62,7 +62,7 @@ if __name__ == "__main__":
     
     ############## READ Clusters file and Create mapping ##########
     clusters = parse_clusters_config(opt.clusters_path)
-
+    print(len(clusters))
     class_to_cluster_list = []
 
     ## create the class-cluster map to be used for labels in split training
@@ -119,7 +119,7 @@ if __name__ == "__main__":
 
     ########### Train for each cluster ############
 
-    for i in range(len(clusters)):
+    for mode_i in range(len(clusters)):
         ####### 1. Prepare cluster data #######
         dataset = ListDataset(train_path, augment=True, multiscale=opt.multiscale_training)
         
@@ -141,7 +141,8 @@ if __name__ == "__main__":
         # #         print("Freeze ", name, " ", i)
         # #         param.requires_grad = False
 
-        model.mode = i
+        model.mode = mode_i
+        
         for epoch in range(opt.epochs):
             model.train()
             start_time = time.time()
@@ -166,7 +167,7 @@ if __name__ == "__main__":
                 #   Log progress
                 # ----------------
 
-                log_str = "\n---- [clus %d Epoch %d/%d, Batch %d/%d] ----\n" % (i, epoch, opt.epochs, batch_i, len(dataloader))
+                log_str = "\n---- [Cluster %d, Epoch %d/%d, Batch %d/%d] ----\n" % (mode_i, epoch, opt.epochs, batch_i, len(dataloader))
 
                 metric_table = [["Metrics", *[f"YOLO Layer {i}" for i in range(len(model.yolo_layers))]]]
 
@@ -200,9 +201,9 @@ if __name__ == "__main__":
                 model.seen += imgs.size(0)
 
                 if batch_i % opt.checkpoint_interval == 0:
-                    torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (i, batch_i))
-                break
-        print(f"\n---- Evaluating Model clus %d ----", i)
+                    torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (mode_i, batch_i))
+        
+        print(f"\n---- Evaluating Model on Cluster ----", mode_i)
         # Evaluate the model on the validation set
         precision, recall, AP, f1, ap_class = evaluate(
             model,
@@ -228,6 +229,6 @@ if __name__ == "__main__":
         print(AsciiTable(ap_table).table)
         print(f"---- mAP {AP.mean()}")
 
-        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(i, epoch))
+        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
 
     torch.save(model.state_dict(), "checkpoints/yolov3_ada.pth")
