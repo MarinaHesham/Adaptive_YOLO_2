@@ -5,7 +5,7 @@ from utils.logger import *
 from utils.utils import *
 from utils.datasets import *
 from utils.parse_config import *
-from test import evaluate
+from ada_test import evaluate
 
 from terminaltables import AsciiTable
 
@@ -200,8 +200,8 @@ if __name__ == "__main__":
                 model.seen += imgs.size(0)
 
                 if batch_i % opt.checkpoint_interval == 0:
-                    torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % i, batch_i)
-
+                    torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (i, batch_i))
+                break
         print(f"\n---- Evaluating Model clus %d ----", i)
         # Evaluate the model on the validation set
         precision, recall, AP, f1, ap_class = evaluate(
@@ -228,6 +228,6 @@ if __name__ == "__main__":
         print(AsciiTable(ap_table).table)
         print(f"---- mAP {AP.mean()}")
 
-        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % i, epoch)
+        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(i, epoch))
 
     torch.save(model.state_dict(), "checkpoints/yolov3_ada.pth")
