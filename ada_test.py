@@ -68,6 +68,7 @@ if __name__ == "__main__":
     parser.add_argument("--nms_thres", type=float, default=0.5, help="iou thresshold for non-maximum suppression")
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
+    parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
     opt = parser.parse_args()
     print(opt)
 
@@ -78,7 +79,26 @@ if __name__ == "__main__":
     class_names = load_classes(data_config["names"])
 
     # Initiate model
-    model = Darknet(opt.model_def).to(device)
+    model = AdaptiveYOLO(opt.model_def).to(device)
+
+    ############## READ Clusters file and Create mapping ##########
+    clusters = parse_clusters_config(opt.clusters_path)
+    print(len(clusters))
+    class_to_cluster_list = []
+
+    ## create the class-cluster map to be used for labels in split training
+    for cluster in clusters:
+        class_to_cluster = {}
+        cluster_to_class = {}
+        for i, element in enumerate(cluster):
+            class_to_cluster[element] = i
+            cluster_to_class[i] = element
+
+        class_to_cluster_list.append(class_to_cluster)
+
+    model.mode_dicts_class_to_cluster = class_to_cluster_list
+    model.mode_classes_list = clusters
+
     if opt.weights_path.endswith(".weights"):
         # Load darknet weights
         model.load_darknet_weights(opt.weights_path)
