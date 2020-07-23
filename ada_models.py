@@ -97,20 +97,19 @@ class AdaptiveYOLO(nn.Module):
         # Convert back the internal cluster based labels to original labels
         # print("Model output is ", yolo_outputs)
         for l, layer in enumerate(yolo_outputs):
-            num_classes = layer.shape[-1]
             temp = torch.zeros(layer.shape[0],layer.shape[1],85-layer.shape[-1], device=x.get_device())
             yolo_outputs[l] = torch.cat((layer,temp), dim=2)
 
             full_detection = torch.zeros(layer.shape[0],layer.shape[1], 85, device=x.get_device())   
             full_detection[:, :, 0:5] = layer[:, :, 0:5]
-            full_detection[:, :, self.mode_classes_list[self.mode]] = layer[:, :, 5:]
+            new_indices = [5 + k for k in self.mode_classes_list[self.mode]]
+            full_detection[:, :, new_indices] = layer[:, :, 5:]
 
             yolo_outputs[l] = full_detection
 
 
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         # print("Model output after conversion is ", yolo_outputs.shape, yolo_outputs)
-        
         return yolo_outputs if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path, layer_cutoff_idx=0):
