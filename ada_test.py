@@ -77,9 +77,14 @@ if __name__ == "__main__":
     data_config = parse_data_config(opt.data_config)
     valid_path = data_config["valid"]
     class_names = load_classes(data_config["names"])
-
+ 
     # Initiate model
     model = AdaptiveYOLO(opt.model_def).to(device)
+
+    num_classes = int(data_config["classes"])
+
+    # Initiate model
+    model.num_all_classes = num_classes
 
     ############## READ Clusters file and Create mapping ##########
     clusters = parse_clusters_config(opt.clusters_path)

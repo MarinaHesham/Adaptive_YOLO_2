@@ -30,14 +30,13 @@ if __name__ == "__main__":
     parser.add_argument("--gradient_accumulations", type=int, default=2, help="number of gradient accums before step")
     parser.add_argument("--model_def", type=str, default="config/yolov3-tiny.cfg", help="path to model definition file")
     parser.add_argument("--data_config", type=str, default="config/coco.data", help="path to data config file")
-    parser.add_argument("--pretrained_weights", type=str, help="if specified starts from checkpoint model")
+    parser.add_argument("--pretrained_weights", type=str, default="weights/yolov3-tiny.weights", help="if specified starts from checkpoint model")
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_interval", type=int, default=100, help="interval between saving model weights")
     parser.add_argument("--evaluation_interval", type=int, default=1, help="interval evaluations on validation set")
     parser.add_argument("--compute_map", default=False, help="if True computes mAP every tenth batch")
     parser.add_argument("--multiscale_training", default=True, help="allow for multi-scale training")
-    parser.add_argument("--weights_path", type=str, default="weights/yolov3-tiny.weights", help="path to weights file")
     parser.add_argument("--frozen_pretrained_layers", type = int, default=9, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
     opt = parser.parse_args()
@@ -55,10 +54,12 @@ if __name__ == "__main__":
     train_path = data_config["train"]
     valid_path = data_config["valid"]
     class_names = load_classes(data_config["names"])
+    num_classes = int(data_config["classes"])
 
     # Initiate model
     model = AdaptiveYOLO(opt.model_def).to(device)
     count_parameters(model)
+    model.num_all_classes = num_classes
     
     ############## READ Clusters file and Create mapping ##########
     clusters = parse_clusters_config(opt.clusters_path)
@@ -81,9 +82,6 @@ if __name__ == "__main__":
 
     model.apply(weights_init_normal)
     
-    # Load first the front layers weights 
-    model.load_darknet_weights(opt.weights_path, opt.frozen_pretrained_layers)
-    
     # Freeze the loaded layers
     # for i, (name, param) in enumerate(model.named_parameters()):
     #     if i < cutoff:
@@ -95,7 +93,7 @@ if __name__ == "__main__":
         if opt.pretrained_weights.endswith(".pth"):
             model.load_state_dict(torch.load(opt.pretrained_weights))
         else:
-            model.load_darknet_weights(opt.pretrained_weights)
+            model.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
 
 
     optimizer = torch.optim.Adam(model.parameters())
@@ -190,7 +188,7 @@ if __name__ == "__main__":
 
             if batch_i % opt.checkpoint_interval == 0:
                 torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (mode_i, batch_i))
-    
+ 
         print(f"\n---- Evaluating Model on Cluster ----", mode_i)
         # Evaluate the model on the validation set
         precision, recall, AP, f1, ap_class = evaluate(
