@@ -28,6 +28,7 @@ class AdaptiveYOLO(nn.Module):
         self.mode = 0
         self.mode_dicts_class_to_cluster = None
         self.mode_classes_list = None
+        self.num_all_classes = 0
 
     def forward(self, x, targets=None):
         # Modify the targets to the cluster targets
@@ -38,7 +39,7 @@ class AdaptiveYOLO(nn.Module):
             modified_targets = targets.clone()
             active_classes = self.mode_classes_list[self.mode]
             # print("Active classes are ", active_classes)
-            # print("Class to Cluster mapping is ", self.mode_dicts_class_to_cluster[self.mode])
+            print("Class to Cluster mapping is ", self.mode_dicts_class_to_cluster[self.mode])
             to_delete = []
             for i, ele in enumerate(modified_targets[:,1]):
                 if ele in active_classes:
@@ -95,21 +96,18 @@ class AdaptiveYOLO(nn.Module):
 
 
         # Convert back the internal cluster based labels to original labels
-        # print("Model output is ", yolo_outputs)
         for l, layer in enumerate(yolo_outputs):
-            temp = torch.zeros(layer.shape[0],layer.shape[1],85-layer.shape[-1], device=x.get_device())
+            temp = torch.zeros(layer.shape[0],layer.shape[1],self.num_all_classes+5-layer.shape[-1], device=x.get_device())
             yolo_outputs[l] = torch.cat((layer,temp), dim=2)
 
-            full_detection = torch.zeros(layer.shape[0],layer.shape[1], 85, device=x.get_device())   
+            full_detection = torch.zeros(layer.shape[0],layer.shape[1], self.num_all_classes+5, device=x.get_device())   
             full_detection[:, :, 0:5] = layer[:, :, 0:5]
             new_indices = [5 + k for k in self.mode_classes_list[self.mode]]
             full_detection[:, :, new_indices] = layer[:, :, 5:]
-
             yolo_outputs[l] = full_detection
 
-
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
-        # print("Model output after conversion is ", yolo_outputs.shape, yolo_outputs)
+        
         return yolo_outputs if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path, layer_cutoff_idx=0):
