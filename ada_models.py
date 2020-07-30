@@ -14,6 +14,63 @@ import matplotlib.patches as patches
 
 from models import create_modules, Upsample, EmptyLayer, YOLOLayer
 
+class ClusterModel(nn.Module):
+    def __init__(self,config_path, out_classes, img_size=416):
+        super(ClusterModel, self).__init__()
+        self.module_defs = parse_model_config(config_path)
+        self.hyperparams, self.module_list = create_modules(self.module_defs)
+        self.img_size = img_size
+        self.num_all_classes = out_classes
+        self.seen = 0
+
+        self.cn1 = nn.Conv2d(
+                in_channels=256,
+                out_channels=32,
+                kernel_size=3,
+                stride=3,
+                padding=1,)
+
+        self.cn2 = nn.Conv2d(
+                in_channels=32,
+                out_channels=16,
+                kernel_size=3,
+                stride=3,
+                padding=1,)
+
+        self.cn3 = nn.Conv2d(
+                in_channels=16,
+                out_channels=8,
+                kernel_size=1,
+                stride=3,
+                padding=1,)
+
+        self.fc1 = nn.Linear(32, 16)
+        self.fc2 = nn.Linear(16, self.num_all_classes)
+        # self.fc3 = nn.Linear(60, self.num_all_classes)
+
+    def forward(self, x):
+        # print("FORWARD")
+        for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
+            if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
+                x = module(x)
+            # print(i, module_def["type"], x.shape)
+        
+        x = self.cn1(x)
+        x = self.cn2(x)
+        x = self.cn3(x)
+        x = x.view(-1, self.num_flat_features(x))
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        # x = self.fc3(x)
+        return F.softmax(x)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features
+
 class AdaptiveYOLO(nn.Module):
     """Adaptive YOLO object detection model"""
 
