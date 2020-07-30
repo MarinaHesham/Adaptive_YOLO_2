@@ -119,8 +119,7 @@ if __name__ == "__main__":
 
     classify_model = None
     if opt.hier_class:
-        classify_model = ClusterModel(opt.hier_model_cfg)
-        classify_model.num_all_classes = num_classes
+        classify_model = ClusterModel(opt.hier_model_cfg, len(clusters)
 
         classify_model.apply(weights_init_normal)
 
