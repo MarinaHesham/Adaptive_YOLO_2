@@ -218,5 +218,5 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
         mode_i = (mode_i + 1) % len(clusters)
 
-
+    model.save_darknet_weights("weights/yolov3_ada.weights")
     torch.save(model.state_dict(), "checkpoints/yolov3_ada.pth")
