@@ -18,9 +18,9 @@ from torchvision import datasets
 from torchvision import transforms
 from torch.autograd import Variable
 import torch.optim as optim
+import random
 
-
-def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size):
+def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, c_model=None):
     model.eval()
 
     # Get dataloader
@@ -34,7 +34,10 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
-
+        if c_model != None:
+            model.mode = torch.argmax(c_model(imgs), dim=1).numpy()[0] 
+        else:
+            model.mode = random.randint(0, 1)
         # Extract labels
         labels += targets[:, 1].tolist()
         # Rescale target
@@ -52,7 +55,6 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     # Concatenate sample statistics
     true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
     precision, recall, AP, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, labels)
-
     return precision, recall, AP, f1, ap_class
 
 
@@ -69,6 +71,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
+    parser.add_argument("--hier_class", type=bool, default=False, help="when True enable hierarical classification")
+    parser.add_argument("--hier_model_cfg", type=str, help="path to hierarical model congiguration")
+    parser.add_argument("--hier_model", type=str, help="path to hierarical classification model")
+
     opt = parser.parse_args()
     print(opt)
 
@@ -80,7 +86,7 @@ if __name__ == "__main__":
  
     # Initiate model
     model = AdaptiveYOLO(opt.model_def).to(device)
-
+    count_parameters(model)
     num_classes = int(data_config["classes"])
 
     # Initiate model
@@ -111,6 +117,16 @@ if __name__ == "__main__":
         # Load checkpoint weights
         model.load_state_dict(torch.load(opt.weights_path))
 
+    classify_model = None
+    if opt.hier_class:
+        classify_model = ClusterModel(opt.hier_model_cfg)
+        classify_model.num_all_classes = num_classes
+
+        classify_model.apply(weights_init_normal)
+
+        # If specified we start from checkpoint
+        classify_model.load_state_dict(torch.load(opt.hier_model))
+
     print("Compute mAP...")
 
     precision, recall, AP, f1, ap_class = evaluate(
@@ -120,7 +136,8 @@ if __name__ == "__main__":
         conf_thres=opt.conf_thres,
         nms_thres=opt.nms_thres,
         img_size=opt.img_size,
-        batch_size=8,
+        batch_size=opt.batch_size,
+        c_model=classify_model,
     )
 
     print("Average Precisions:")
