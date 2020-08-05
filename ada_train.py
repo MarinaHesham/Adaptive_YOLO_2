@@ -186,9 +186,8 @@ if __name__ == "__main__":
 
             model.seen += imgs.size(0)
 
-            if batch_i % opt.checkpoint_interval == 0:
-                torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" % (mode_i, batch_i))
- 
+        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
+
         print(f"\n---- Evaluating Model on Cluster ----", mode_i)
         # Evaluate the model on the validation set
         precision, recall, AP, f1, ap_class = evaluate(

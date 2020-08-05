@@ -6,7 +6,6 @@ from utils.utils import *
 from utils.datasets import *
 from utils.parse_config import *
 from test import evaluate
-from classify import *
 from terminaltables import AsciiTable
 
 import os
@@ -51,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("--compute_map", default=False, help="if True computes mAP every tenth batch")
     parser.add_argument("--multiscale_training", default=True, help="allow for multi-scale training")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3-tiny.weights", help="path to weights file")
-    parser.add_argument("--frozen_pretrained_layers", type = int, default=9, help="number of the front layers that should be loaded from pretrained weights")
+    parser.add_argument("--frozen_pretrained_layers", type = int, default=0, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
     opt = parser.parse_args()
     print(opt)
@@ -70,12 +69,10 @@ if __name__ == "__main__":
     class_names = load_classes(data_config["names"])
     num_classes = int(data_config["classes"])
 
+    clusters = parse_clusters_config(opt.clusters_path)
 
     # Initiate model
-    model = ClusterModel(opt.model_def).to(device)
-    model.num_all_classes = num_classes
-
-    clusters = parse_clusters_config(opt.clusters_path)
+    model = ClusterModel(opt.model_def, len(clusters)).to(device)
 
     model.apply(weights_init_normal)
 
@@ -87,10 +84,11 @@ if __name__ == "__main__":
             model.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
 
     # Freeze the loaded layers
-    for i, (name, param) in enumerate(model.named_parameters()):
-        if i < opt.frozen_pretrained_layers:
-            print("Freeze ", name, " ", i)
-            param.requires_grad = False
+    if opt.frozen_pretrained_layers != 0:
+        for i, (name, param) in enumerate(model.named_parameters()):
+            if i < opt.frozen_pretrained_layers:
+                print("Freeze ", name, " ", i)
+                param.requires_grad = False
 
     count_parameters(model)
 
@@ -105,28 +103,36 @@ if __name__ == "__main__":
         collate_fn=dataset.collate_fn
     )
 
-    optimizer = torch.optim.Adam(model.parameters())
     criterion = nn.MSELoss()
+    learning_rate = 0.01
+    momentum = 0.5
+    random_seed = 1
+    torch.manual_seed(random_seed)
 
+    best_accuracy = 0
+    best_model = model
+
+    optimizer = torch.optim.Adam(model.parameters(),lr=learning_rate)
+    print(model.parameters) 
     for epoch in range(opt.epochs):
         model.train()
         start_time = time.time()
         
         for batch_i, (_, imgs, targets) in enumerate(dataloader):
-            
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
-
-            optimizer.zero_grad()   # zero the gradient buffers
             output = model(imgs)
-            loss = criterion(output, targets)
+            #print(output)
+            loss =  F.binary_cross_entropy(output, targets)
             loss.backward()
-            optimizer.step()    # Does the update
-            
+                      
+            if batch_i % 1 == 0:
+                optimizer.step()    # Does the update
+                optimizer.zero_grad()
             model.seen += imgs.size(0)
             if batch_i % 100 == 0:
                 print(batch_i,len(dataloader), loss.cpu().detach().numpy())
-
+                
         torch.save(model.state_dict(), f"checkpoints/yolov3_cluster_net_%d.pth" % epoch)
 
         dataset_valid = ClustersDataset(valid_path, augment=True, multiscale=False,  clusters=clusters)
@@ -146,6 +152,7 @@ if __name__ == "__main__":
         all_predictions = 0
         
         for batch_i, (_, imgs, targets) in enumerate(dataloader_valid):
+            model.eval()
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
 
@@ -158,3 +165,9 @@ if __name__ == "__main__":
             all_predictions += len(targets)
 
         print("Accuracy = ", 100.0*right_predictions/all_predictions)
+        if best_accuracy < right_predictions/all_predictions:
+            best_accuracy = right_predictions/all_predictions
+            best_model = model
+    
+    print("Saving best model with accuracy", best_accuracy)
+    torch.save(best_model.state_dict(), "checkpoints/yolov3_cluster_net.pth")

@@ -20,7 +20,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 import random
 
-def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, c_model=None):
+def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, max_bound=False, c_model=None):
     model.eval()
 
     # Get dataloader
@@ -35,15 +35,21 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     sample_metrics = []  # List of tuples (TP, confs, pred)
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
         if c_model != None:
-            model.mode = torch.argmax(c_model(imgs), dim=1).numpy()[0] 
+            model.mode = torch.argmax(c_model(imgs), dim=1).numpy()[0]
         else:
             model.mode = random.randint(0, 1)
+        
         # Extract labels
         labels += targets[:, 1].tolist()
+        if max_bound:
+             if targets[:, 1].tolist()[0] < 3:
+                 model.mode = 0
+             else:
+                 model.mode = 1 
+        
         # Rescale target
         targets[:, 2:] = xywh2xyxy(targets[:, 2:])
         targets[:, 2:] *= img_size
-
         imgs = Variable(imgs.type(Tensor), requires_grad=False)
 
         with torch.no_grad():
@@ -74,6 +80,7 @@ if __name__ == "__main__":
     parser.add_argument("--hier_class", type=bool, default=False, help="when True enable hierarical classification")
     parser.add_argument("--hier_model_cfg", type=str, help="path to hierarical model congiguration")
     parser.add_argument("--hier_model", type=str, help="path to hierarical classification model")
+    parser.add_argument("--max_bound", type=bool, default=False, help="when True enable max bound for the hierarical model")
 
     opt = parser.parse_args()
     print(opt)
@@ -100,10 +107,8 @@ if __name__ == "__main__":
     ## create the class-cluster map to be used for labels in split training
     for cluster in clusters:
         class_to_cluster = {}
-        cluster_to_class = {}
         for i, element in enumerate(cluster):
             class_to_cluster[element] = i
-            cluster_to_class[i] = element
 
         class_to_cluster_list.append(class_to_cluster)
 
@@ -119,7 +124,7 @@ if __name__ == "__main__":
 
     classify_model = None
     if opt.hier_class:
-        classify_model = ClusterModel(opt.hier_model_cfg, len(clusters)
+        classify_model = ClusterModel(opt.hier_model_cfg, len(clusters))
 
         classify_model.apply(weights_init_normal)
 
@@ -136,6 +141,7 @@ if __name__ == "__main__":
         nms_thres=opt.nms_thres,
         img_size=opt.img_size,
         batch_size=opt.batch_size,
+        max_bound=opt.max_bound,
         c_model=classify_model,
     )
 

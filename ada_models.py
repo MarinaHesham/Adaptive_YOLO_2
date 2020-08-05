@@ -24,42 +24,48 @@ class ClusterModel(nn.Module):
         self.seen = 0
 
         self.cn1 = nn.Conv2d(
-                in_channels=256,
+                in_channels=128,
+                out_channels=64,
+                kernel_size=3,
+                stride=3,
+                padding=1,)
+        self.bn1 = nn.BatchNorm2d(64, momentum=0.9, eps=1e-5)
+        self.cn2 = nn.Conv2d(
+                in_channels=64,
                 out_channels=32,
                 kernel_size=3,
                 stride=3,
                 padding=1,)
-
-        self.cn2 = nn.Conv2d(
+        self.bn2 = nn.BatchNorm2d(32, momentum=0.9, eps=1e-5)
+        self.cn3 = nn.Conv2d(
                 in_channels=32,
                 out_channels=16,
-                kernel_size=3,
-                stride=3,
-                padding=1,)
-
-        self.cn3 = nn.Conv2d(
-                in_channels=16,
-                out_channels=8,
                 kernel_size=1,
                 stride=3,
                 padding=1,)
 
-        self.fc1 = nn.Linear(32, 16)
-        self.fc2 = nn.Linear(16, self.num_all_classes)
+        self.bn3 = nn.BatchNorm2d(16, momentum=0.9, eps=1e-5)
+        self.fc1 = nn.Linear(64, 64)
+        self.fc2 = nn.Linear(64, self.num_all_classes)
         # self.fc3 = nn.Linear(60, self.num_all_classes)
 
     def forward(self, x):
-        # print("FORWARD")
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             # print(i, module_def["type"], x.shape)
         
         x = self.cn1(x)
+        x = self.bn1(x)
+        x = F.leaky_relu(x, 0.01)
         x = self.cn2(x)
+        x = self.bn2(x)
+        x = F.leaky_relu(x, 0.01)
         x = self.cn3(x)
+        x = self.bn3(x)
+        x = F.leaky_relu(x, 0.01)
         x = x.view(-1, self.num_flat_features(x))
-        x = F.relu(self.fc1(x))
+        x = F.leaky_relu(self.fc1(x), 0.01)
         x = self.fc2(x)
         # x = self.fc3(x)
         return F.softmax(x)
@@ -70,6 +76,61 @@ class ClusterModel(nn.Module):
         for s in size:
             num_features *= s
         return num_features
+
+    def load_darknet_weights(self, weights_path, layer_cutoff_idx=0):
+        """Parses and loads the weights stored in 'weights_path'"""
+
+        # Open the weights file
+        with open(weights_path, "rb") as f:
+            header = np.fromfile(f, dtype=np.int32, count=5)  # First five are header values
+            self.header_info = header  # Needed to write header when saving weights
+            self.seen = header[3]  # number of images seen during training
+            weights = np.fromfile(f, dtype=np.float32)  # The rest are weights
+
+        # Establish cutoff for loading backbone weights
+        cutoff = 0
+        if "darknet53.conv.74" in weights_path:
+            cutoff = 75
+
+        cutoff = min(cutoff, layer_cutoff_idx)
+
+        ptr = 0
+        for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
+            if i == cutoff:
+                break
+            if module_def["type"] == "convolutional":
+                conv_layer = module[0]
+                if module_def["batch_normalize"]:
+                    # Load BN bias, weights, running mean and running variance
+                    bn_layer = module[1]
+                    num_b = bn_layer.bias.numel()  # Number of biases
+                    # Bias
+                    bn_b = torch.from_numpy(weights[ptr : ptr + num_b]).view_as(bn_layer.bias)
+                    bn_layer.bias.data.copy_(bn_b)
+                    ptr += num_b
+                    # Weight
+                    bn_w = torch.from_numpy(weights[ptr : ptr + num_b]).view_as(bn_layer.weight)
+                    bn_layer.weight.data.copy_(bn_w)
+                    ptr += num_b
+                    # Running Mean
+                    bn_rm = torch.from_numpy(weights[ptr : ptr + num_b]).view_as(bn_layer.running_mean)
+                    bn_layer.running_mean.data.copy_(bn_rm)
+                    ptr += num_b
+                    # Running Var
+                    bn_rv = torch.from_numpy(weights[ptr : ptr + num_b]).view_as(bn_layer.running_var)
+                    bn_layer.running_var.data.copy_(bn_rv)
+                    ptr += num_b
+                else:
+                    # Load conv. bias
+                    num_b = conv_layer.bias.numel()
+                    conv_b = torch.from_numpy(weights[ptr : ptr + num_b]).view_as(conv_layer.bias)
+                    conv_layer.bias.data.copy_(conv_b)
+                    ptr += num_b
+                # Load conv. weights
+                num_w = conv_layer.weight.numel()
+                conv_w = torch.from_numpy(weights[ptr : ptr + num_w]).view_as(conv_layer.weight)
+                conv_layer.weight.data.copy_(conv_w)
+                ptr += num_w
 
 class AdaptiveYOLO(nn.Module):
     """Adaptive YOLO object detection model"""
