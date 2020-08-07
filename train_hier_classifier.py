@@ -82,13 +82,12 @@ if __name__ == "__main__":
             model.load_state_dict(torch.load(opt.pretrained_weights))
         else:
             model.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
-
-    # Freeze the loaded layers
-    if opt.frozen_pretrained_layers != 0:
-        for i, (name, param) in enumerate(model.named_parameters()):
-            if i < opt.frozen_pretrained_layers:
-                print("Freeze ", name, " ", i)
-                param.requires_grad = False
+            # Freeze the loaded layers
+            if opt.frozen_pretrained_layers != 0:
+                for i, (name, param) in enumerate(model.named_parameters()):
+                    if i < opt.frozen_pretrained_layers:
+                        print("Freeze ", name, " ", i)
+                        param.requires_grad = False
 
     count_parameters(model)
 
@@ -104,26 +103,25 @@ if __name__ == "__main__":
     )
 
     criterion = nn.MSELoss()
-    learning_rate = 0.01
-    momentum = 0.5
+    learning_rate = 0.001
+    momentum = 0.9
     random_seed = 1
     torch.manual_seed(random_seed)
 
     best_accuracy = 0
     best_model = model
 
-    optimizer = torch.optim.Adam(model.parameters(),lr=learning_rate)
+    optimizer = torch.optim.SGD(model.parameters(),lr=learning_rate, momentum=momentum)
     print(model.parameters) 
     for epoch in range(opt.epochs):
         model.train()
         start_time = time.time()
-        
         for batch_i, (_, imgs, targets) in enumerate(dataloader):
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
             output = model(imgs)
             #print(output)
-            loss =  F.binary_cross_entropy(output, targets)
+            loss =  criterion(output, targets)
             loss.backward()
                       
             if batch_i % 1 == 0:
@@ -134,6 +132,26 @@ if __name__ == "__main__":
                 print(batch_i,len(dataloader), loss.cpu().detach().numpy())
                 
         torch.save(model.state_dict(), f"checkpoints/yolov3_cluster_net_%d.pth" % epoch)
+
+        print("Evaluate on ", len(dataloader))
+
+        right_predictions = 0
+        all_predictions = 0
+        
+        for batch_i, (_, imgs, targets) in enumerate(dataloader):
+            model.eval()
+            imgs = Variable(imgs.to(device))
+            targets = Variable(targets.to(device), requires_grad=False)
+
+            output = model(imgs)
+            loss = criterion(output, targets)
+
+            output = torch.argmax(output.cpu(), dim=1).numpy()
+            targets = torch.argmax(targets.cpu(), dim=1).numpy()
+            right_predictions += np.count_nonzero(targets==output)
+            all_predictions += len(targets)
+
+        print("Accuracy on Training = ", 100.0*right_predictions/all_predictions)
 
         dataset_valid = ClustersDataset(valid_path, augment=True, multiscale=False,  clusters=clusters)
 
@@ -150,7 +168,6 @@ if __name__ == "__main__":
 
         right_predictions = 0
         all_predictions = 0
-        
         for batch_i, (_, imgs, targets) in enumerate(dataloader_valid):
             model.eval()
             imgs = Variable(imgs.to(device))
@@ -161,10 +178,11 @@ if __name__ == "__main__":
 
             output = torch.argmax(output.cpu(), dim=1).numpy()
             targets = torch.argmax(targets.cpu(), dim=1).numpy()
+    
             right_predictions += np.count_nonzero(targets==output)
             all_predictions += len(targets)
 
-        print("Accuracy = ", 100.0*right_predictions/all_predictions)
+        print("Accuracy of Validation = ", 100.0*right_predictions/all_predictions)
         if best_accuracy < right_predictions/all_predictions:
             best_accuracy = right_predictions/all_predictions
             best_model = model

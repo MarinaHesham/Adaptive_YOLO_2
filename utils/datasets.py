@@ -74,7 +74,7 @@ class ListDataset(Dataset):
             self.img_files = file.readlines()
 
         self.label_files = [
-            path.replace("images", "labels").replace(".png", ".txt").replace(".jpg", ".txt")
+            path.replace("images", "labels_sub").replace(".png", ".txt").replace(".jpg", ".txt")
             for path in self.img_files
         ]
         self.img_size = img_size
@@ -172,7 +172,7 @@ class ClustersDataset(Dataset):
             self.img_files = file.readlines()
 
         self.label_files = [
-            path.replace("images", "labels").replace(".png", ".txt").replace(".jpg", ".txt")
+            path.replace("images", "labels_sub").replace(".png", ".txt").replace(".jpg", ".txt")
             for path in self.img_files
         ]
         self.img_size = img_size
@@ -223,7 +223,7 @@ class ClustersDataset(Dataset):
                 for i, cluster in enumerate(self.clusters):
                     if box in cluster:
                         clusters_cnt[i] += 1
-            
+
             target = torch.argmax(clusters_cnt).item()
             target = one_hot_embedding(target, len(self.clusters))
         else:
@@ -245,7 +245,7 @@ class ClustersDataset(Dataset):
         if self.multiscale and self.batch_count % 10 == 0:
             self.img_size = random.choice(range(self.min_size, self.max_size + 1, 32))
         # Resize images to input shape
-        imgs = torch.stack([resize(img, self.min_size) for img in imgs])
+        imgs = torch.stack([resize(img, self.img_size) for img in imgs])
         self.batch_count += 1
         return paths, imgs, targets
 

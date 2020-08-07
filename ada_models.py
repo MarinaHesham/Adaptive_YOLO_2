@@ -12,7 +12,92 @@ from utils.utils import build_targets, to_cpu, non_max_suppression
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from models import create_modules, Upsample, EmptyLayer, YOLOLayer
+from models import Upsample, EmptyLayer, YOLOLayer
+
+def create_modules(module_defs):
+    """
+    Constructs module list of layer blocks from module configuration in module_defs
+    """
+    hyperparams = module_defs.pop(0)
+    output_filters = [int(hyperparams["channels"])]
+    module_list = nn.ModuleList()
+    split_idx = -1
+    new_branch = False
+    for module_i, module_def in enumerate(module_defs):
+        modules = nn.Sequential()
+
+        if module_def["type"] == "convolutional":
+            bn = int(module_def["batch_normalize"])
+            filters = int(module_def["filters"])
+            kernel_size = int(module_def["size"])
+            pad = int(module_def["pad"])
+            if new_branch:
+                in_filters = output_filters[split_idx]
+                new_branch = False
+            else:
+                in_filters = output_filters[-1]
+            modules.add_module(
+                f"conv_{module_i}",
+                nn.Conv2d(
+                    in_channels=in_filters,
+                    out_channels=filters,
+                    kernel_size=kernel_size,
+                    stride=int(module_def["stride"]),
+                    padding=pad,
+                    bias=not bn,
+                ),
+            )
+            if bn:
+                modules.add_module(f"batch_norm_{module_i}", nn.BatchNorm2d(filters, momentum=0.9, eps=1e-5))
+            if module_def["activation"] == "leaky":
+                modules.add_module(f"leaky_{module_i}", nn.LeakyReLU(0.1))
+
+        elif module_def["type"] == "branch":
+            if split_idx == -1:
+                split_idx = module_i-1
+            modules.add_module(f"branch_{module_i}", EmptyLayer())
+            new_branch = True
+
+        elif module_def["type"] == "maxpool":
+            kernel_size = int(module_def["size"])
+            stride = int(module_def["stride"])
+            if kernel_size == 2 and stride == 1:
+                modules.add_module(f"_debug_padding_{module_i}", nn.ZeroPad2d((0, 1, 0, 1)))
+            maxpool = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=int((kernel_size - 1) // 2))
+            modules.add_module(f"maxpool_{module_i}", maxpool)
+
+        elif module_def["type"] == "upsample":
+            upsample = Upsample(scale_factor=int(module_def["stride"]), mode="nearest")
+            modules.add_module(f"upsample_{module_i}", upsample)
+
+        elif module_def["type"] == "route":
+            layers = [int(x) for x in module_def["layers"].split(",")]
+            filters = sum([output_filters[1:][i] for i in layers])
+            modules.add_module(f"route_{module_i}", EmptyLayer())
+
+        elif module_def["type"] == "shortcut":
+            filters = output_filters[1:][int(module_def["from"])]
+            modules.add_module(f"shortcut_{module_i}", EmptyLayer())
+
+        elif module_def["type"] == "yolo":
+            anchor_idxs = [int(x) for x in module_def["mask"].split(",")]
+            # Extract anchors
+            anchors = [int(x) for x in module_def["anchors"].split(",")]
+            anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+            anchors = [anchors[i] for i in anchor_idxs]
+            num_classes = int(module_def["classes"])
+            img_size = int(hyperparams["height"])
+            # Define detection layer
+            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            modules.add_module(f"yolo_{module_i}", yolo_layer)
+        else:
+            print("ERRRRRRRROR ", module_def["type"])
+        # Register module list and number of output filters
+        module_list.append(modules)
+        print(module_list[-1])
+        output_filters.append(filters)
+
+    return hyperparams, module_list
 
 class ClusterModel(nn.Module):
     def __init__(self,config_path, out_classes, img_size=416):
@@ -22,52 +107,22 @@ class ClusterModel(nn.Module):
         self.img_size = img_size
         self.num_all_classes = out_classes
         self.seen = 0
-
-        self.cn1 = nn.Conv2d(
-                in_channels=128,
-                out_channels=64,
-                kernel_size=3,
-                stride=3,
-                padding=1,)
-        self.bn1 = nn.BatchNorm2d(64, momentum=0.9, eps=1e-5)
-        self.cn2 = nn.Conv2d(
-                in_channels=64,
-                out_channels=32,
-                kernel_size=3,
-                stride=3,
-                padding=1,)
-        self.bn2 = nn.BatchNorm2d(32, momentum=0.9, eps=1e-5)
-        self.cn3 = nn.Conv2d(
-                in_channels=32,
-                out_channels=16,
-                kernel_size=1,
-                stride=3,
-                padding=1,)
-
-        self.bn3 = nn.BatchNorm2d(16, momentum=0.9, eps=1e-5)
-        self.fc1 = nn.Linear(64, 64)
+        self.fc1 = nn.Linear(144, 64)
         self.fc2 = nn.Linear(64, self.num_all_classes)
-        # self.fc3 = nn.Linear(60, self.num_all_classes)
 
     def forward(self, x):
+        layer_outputs = []
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
-            # print(i, module_def["type"], x.shape)
-        
-        x = self.cn1(x)
-        x = self.bn1(x)
-        x = F.leaky_relu(x, 0.01)
-        x = self.cn2(x)
-        x = self.bn2(x)
-        x = F.leaky_relu(x, 0.01)
-        x = self.cn3(x)
-        x = self.bn3(x)
-        x = F.leaky_relu(x, 0.01)
+            elif module_def["type"] == "route":
+                x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
+            layer_outputs.append(x)
+            #print(i, module_def["type"], x.shape)
         x = x.view(-1, self.num_flat_features(x))
-        x = F.leaky_relu(self.fc1(x), 0.01)
+        #print(x.shape)
+        x = F.leaky_relu(self.fc1(x),0.1)
         x = self.fc2(x)
-        # x = self.fc3(x)
         return F.softmax(x)
 
     def num_flat_features(self, x):
@@ -181,26 +236,21 @@ class AdaptiveYOLO(nn.Module):
 
         img_dim = x.shape[2]
         loss = 0
-        split = False
+        skip = False
         layer_outputs, yolo_outputs = [], []
+        current_branch = -1
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
-            # print(i, module_def["type"])
-            if split == True and module_def["type"] != "split2":
+            if skip == True and module_def["type"] != "branch":
                 continue
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
-            elif module_def["type"] == "split1":
-                if self.mode == 0:
-                    x = module(x)
-                else:
-                    split = True
+            elif module_def["type"] == "branch":
+                current_branch += 1
+                if self.mode != current_branch:
+                    skip = True
                     continue
-            elif module_def["type"] == "split2":
-                if self.mode == 0:
-                    break
                 else:
-                    x = module(x)
-                    split = False
+                    skip = False
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":
@@ -211,6 +261,7 @@ class AdaptiveYOLO(nn.Module):
                 loss += layer_loss
                 yolo_outputs.append(x)
             layer_outputs.append(x)
+            #print(i, module_def["type"], x.shape)
 
 
         # Convert back the internal cluster based labels to original labels
