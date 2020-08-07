@@ -11,6 +11,8 @@ weights/*
 __pycache__
 checkpoints
 clusters.data
+clusters_sub.data
 co-occurence_adjacency_matrix.csv
 env
 logs
+log*
