@@ -151,7 +151,7 @@ if __name__ == "__main__":
             right_predictions += np.count_nonzero(targets==output)
             all_predictions += len(targets)
 
-        print("Accuracy on Training = ", 100.0*right_predictions/all_predictions)
+        print(epoch, "Accuracy on Training = ", 100.0*right_predictions/all_predictions)
 
         dataset_valid = ClustersDataset(valid_path, augment=True, multiscale=False,  clusters=clusters)
 
@@ -182,7 +182,7 @@ if __name__ == "__main__":
             right_predictions += np.count_nonzero(targets==output)
             all_predictions += len(targets)
 
-        print("Accuracy of Validation = ", 100.0*right_predictions/all_predictions)
+        print(epoch, "Accuracy of Validation = ", 100.0*right_predictions/all_predictions)
         if best_accuracy < right_predictions/all_predictions:
             best_accuracy = right_predictions/all_predictions
             best_model = model
