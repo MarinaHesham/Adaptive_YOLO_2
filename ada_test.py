@@ -19,6 +19,7 @@ from torchvision import transforms
 from torch.autograd import Variable
 import torch.optim as optim
 import random
+from ptflops import get_model_complexity_info
 
 def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, max_bound=False, c_model=None):
     model.eval()
@@ -31,32 +32,60 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
 
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
+    classification_time = datetime.timedelta(seconds=0)
+    detection_time = datetime.timedelta(seconds=0)
+    non_max_suppression_time = datetime.timedelta(seconds=0)
+
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
-        if c_model != None:
-            model.mode = torch.argmax(c_model(imgs), dim=1).numpy()[0]
-        else:
-            model.mode = random.randint(0, 1)
-        
         # Extract labels
         labels += targets[:, 1].tolist()
+
+        # Rescale target
+        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
+        targets[:, 2:] *= img_size
+        imgs = Variable(imgs.type(Tensor), requires_grad=False)
+        
+        # Select mode
+        prev_time = time.time()
         if max_bound:
              if targets[:, 1].tolist()[0] < 3:
                  model.mode = 0
              else:
                  model.mode = 1 
+        else:
+            if c_model != None:
+                model.mode = torch.argmax(c_model(imgs), dim=1)[0]
+            else:
+                model.mode = random.randint(0, 1)
         
-        # Rescale target
-        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
-        targets[:, 2:] *= img_size
-        imgs = Variable(imgs.type(Tensor), requires_grad=False)
+        current_time = time.time()
+        inference_time = datetime.timedelta(seconds=current_time - prev_time)
+        prev_time = current_time
+        classification_time += inference_time
 
         with torch.no_grad():
+            prev_time = time.time()
             outputs = model(imgs)
+
+            current_time = time.time()
+            inference_time = datetime.timedelta(seconds=current_time - prev_time)
+            prev_time = current_time
+            detection_time += inference_time
+
             outputs = non_max_suppression(outputs, conf_thres=conf_thres, nms_thres=nms_thres)
 
+            current_time = time.time()
+            inference_time = datetime.timedelta(seconds=current_time - prev_time)
+            prev_time = current_time
+            non_max_suppression_time += inference_time
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
+
+    print("Classification time is ", classification_time, "Average per image is ", (classification_time/len(dataloader)).microseconds/1000, "ms")
+    print("Detection time is ", detection_time, "Average per image is ", (detection_time/len(dataloader)).microseconds/1000, "ms")
+    print("NMS time is ", non_max_suppression_time, "Average per image is ", (non_max_suppression_time/len(dataloader)).microseconds/1000, "ms")
+    print("Total Inference time is ", classification_time+detection_time+non_max_suppression_time, "Average per image is ", ((classification_time+detection_time+non_max_suppression_time)/len(dataloader)).microseconds/1000, "ms")
 
     # Concatenate sample statistics
     true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
@@ -124,14 +153,26 @@ if __name__ == "__main__":
 
     classify_model = None
     if opt.hier_class:
-        classify_model = ClusterModel(opt.hier_model_cfg, len(clusters))
+        classify_model = ClusterModel(opt.hier_model_cfg, len(clusters)).to(device)
 
         classify_model.apply(weights_init_normal)
 
         # If specified we start from checkpoint
         classify_model.load_state_dict(torch.load(opt.hier_model))
 
+
+        with torch.cuda.device(0):
+            macs, params = get_model_complexity_info(classify_model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
+            print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+            print('{:<30}  {:<8}'.format('Number of parameters: ', params))
+
+
     print("Compute mAP...")
+
+    with torch.cuda.device(0):
+        macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
+        print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+        print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
     precision, recall, AP, f1, ap_class = evaluate(
         model,
