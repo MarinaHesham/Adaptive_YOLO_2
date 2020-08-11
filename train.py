@@ -94,6 +94,9 @@ if __name__ == "__main__":
         "conf_noobj",
     ]
 
+    best_model = model
+    best_map = 0
+
     for epoch in range(opt.epochs):
         model.train()
         start_time = time.time()
@@ -174,6 +177,13 @@ if __name__ == "__main__":
                 ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
             print(AsciiTable(ap_table).table)
             print(f"---- mAP {AP.mean()}")
-
+            if AP.mean() > best_map:
+                best_map = AP.mean()
+                best_model = model
         if epoch % opt.checkpoint_interval == 0:
             torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_%d.pth" % epoch)
+
+    print("Saving best model of mAP", best_map)
+
+    best_model.save_darknet_weights("weights/yolov3_tiny.weights")
+    torch.save(best_model.state_dict(), "checkpoints/yolov3_tiny.pth")
