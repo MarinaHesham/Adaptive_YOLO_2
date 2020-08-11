@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument("--evaluation_interval", type=int, default=1, help="interval evaluations on validation set")
     parser.add_argument("--compute_map", default=False, help="if True computes mAP every tenth batch")
     parser.add_argument("--multiscale_training", default=True, help="allow for multi-scale training")
-    parser.add_argument("--frozen_pretrained_layers", type = int, default=9, help="number of the front layers that should be loaded from pretrained weights")
+    parser.add_argument("--frozen_pretrained_layers", type = int, default=0, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
     opt = parser.parse_args()
     print(opt)
@@ -81,12 +81,6 @@ if __name__ == "__main__":
     model.mode_classes_list = clusters
 
     model.apply(weights_init_normal)
-    
-    # Freeze the loaded layers
-    # for i, (name, param) in enumerate(model.named_parameters()):
-    #     if i < cutoff:
-    #         print("Freeze ", name, " ", i)
-    #         param.requires_grad = False
 
     # If specified we start from checkpoint
     if opt.pretrained_weights:
@@ -95,7 +89,12 @@ if __name__ == "__main__":
         else:
             model.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
 
-
+    # Freeze the loaded layers
+    for i, (name, param) in enumerate(model.named_parameters()):
+        if i <= opt.frozen_pretrained_layers:
+            print("Freeze ", name, " ", i)
+            param.requires_grad = False
+    
     optimizer = torch.optim.Adam(model.parameters())
 
     metrics = [
@@ -117,6 +116,9 @@ if __name__ == "__main__":
 
     #### Alternate between clusters at each epoch
     mode_i = 0
+    best_model = model
+    best_map = 0
+
     for epoch in range(opt.epochs):
         model.mode = mode_i
         dataset = ListDataset(train_path, augment=True, multiscale=opt.multiscale_training)
@@ -198,6 +200,7 @@ if __name__ == "__main__":
             nms_thres=0.5,
             img_size=opt.img_size,
             batch_size=8,
+            max_bound=True,
         )
         evaluation_metrics = [
             ("val_precision", precision.mean()),
@@ -213,9 +216,14 @@ if __name__ == "__main__":
             ap_table += [[c, class_names[c], "%.5f" % AP[i]]]
         print(AsciiTable(ap_table).table)
         print(f"---- mAP {AP.mean()}")
+        if AP.mean() > best_map:
+            best_map = AP.mean()
+            best_model = model
 
         torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
         mode_i = (mode_i + 1) % len(clusters)
 
-    model.save_darknet_weights("weights/yolov3_ada.weights")
-    torch.save(model.state_dict(), "checkpoints/yolov3_ada.pth")
+    print("Saving best model of mAP", best_map)
+
+    best_model.save_darknet_weights("weights/yolov3_ada.weights")
+    torch.save(best_model.state_dict(), "checkpoints/yolov3_ada.pth")
