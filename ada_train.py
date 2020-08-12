@@ -195,11 +195,11 @@ if __name__ == "__main__":
         precision, recall, AP, f1, ap_class = evaluate(
             model,
             path=valid_path,
-            iou_thres=0.5,
-            conf_thres=0.2,
-            nms_thres=0.5,
+            iou_thres=0.3,
+            conf_thres=0.5,
+            nms_thres=0.3,
             img_size=opt.img_size,
-            batch_size=8,
+            batch_size=1,
             max_bound=True,
         )
         evaluation_metrics = [
