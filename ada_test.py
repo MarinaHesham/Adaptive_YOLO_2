@@ -55,10 +55,7 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
              else:
                  model.mode = 1 
         else:
-            if c_model != None:
-                model.mode = torch.argmax(c_model(imgs), dim=1)[0]
-            else:
-                model.mode = random.randint(0, 1)
+            model.mode = random.randint(0, 1)
         
         current_time = time.time()
         inference_time = datetime.timedelta(seconds=current_time - prev_time)
@@ -109,6 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("--hier_class", type=bool, default=False, help="when True enable hierarical classification")
     parser.add_argument("--hier_model_cfg", type=str, help="path to hierarical model congiguration")
     parser.add_argument("--hier_model", type=str, help="path to hierarical classification model")
+    parser.add_argument("--hier_model_shared_layers", type=int, default=-1, help="path to hierarical classification model")
     parser.add_argument("--max_bound", type=bool, default=False, help="when True enable max bound for the hierarical model")
 
     opt = parser.parse_args()
@@ -154,26 +152,23 @@ if __name__ == "__main__":
     classify_model = None
     if opt.hier_class:
         classify_model = ClusterModel(opt.hier_model_cfg, len(clusters)).to(device)
-
         classify_model.apply(weights_init_normal)
-
-        # If specified we start from checkpoint
         classify_model.load_state_dict(torch.load(opt.hier_model))
-
 
         with torch.cuda.device(0):
             macs, params = get_model_complexity_info(classify_model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
             print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
             print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
-
     print("Compute mAP...")
+    model.shared_layers = int(opt.hier_model_shared_layers)
+    model.classification_model = classify_model
 
     with torch.cuda.device(0):
         macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
         print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
         print('{:<30}  {:<8}'.format('Number of parameters: ', params))
-
+    
     precision, recall, AP, f1, ap_class = evaluate(
         model,
         path=valid_path,
@@ -183,7 +178,6 @@ if __name__ == "__main__":
         img_size=opt.img_size,
         batch_size=opt.batch_size,
         max_bound=opt.max_bound,
-        c_model=classify_model,
     )
 
     print("Average Precisions:")
