@@ -163,6 +163,8 @@ if __name__ == "__main__":
     print("Compute mAP...")
     model.shared_layers = int(opt.hier_model_shared_layers)
     model.classification_model = classify_model
+    if classify_model is not None:
+        model.classification_model.shared_layers = int(opt.hier_model_shared_layers)
 
     with torch.cuda.device(0):
         macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)

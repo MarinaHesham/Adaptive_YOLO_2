@@ -49,9 +49,10 @@ if __name__ == "__main__":
     parser.add_argument("--evaluation_interval", type=int, default=1, help="interval evaluations on validation set")
     parser.add_argument("--compute_map", default=False, help="if True computes mAP every tenth batch")
     parser.add_argument("--multiscale_training", default=True, help="allow for multi-scale training")
-    parser.add_argument("--weights_path", type=str, default="weights/yolov3-tiny.weights", help="path to weights file")
     parser.add_argument("--frozen_pretrained_layers", type = int, default=0, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
+    parser.add_argument("--ckpt_prefix", type=str, default="", help="pre for checkpoints files")
+
     opt = parser.parse_args()
     print(opt)
 
@@ -68,6 +69,7 @@ if __name__ == "__main__":
     valid_path = data_config["valid"]
     class_names = load_classes(data_config["names"])
     num_classes = int(data_config["classes"])
+    frozen_layers = int(opt.frozen_pretrained_layers)
 
     clusters = parse_clusters_config(opt.clusters_path)
 
@@ -81,11 +83,11 @@ if __name__ == "__main__":
         if opt.pretrained_weights.endswith(".pth"):
             model.load_state_dict(torch.load(opt.pretrained_weights))
         else:
-            model.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
+            model.load_darknet_weights(opt.pretrained_weights,frozen_layers)
             # Freeze the loaded layers
-            if opt.frozen_pretrained_layers != 0:
+            if frozen_layers != 0:
                 for i, (name, param) in enumerate(model.named_parameters()):
-                    if i < opt.frozen_pretrained_layers:
+                    if i <= frozen_layers:
                         print("Freeze ", name, " ", i)
                         param.requires_grad = False
 
@@ -116,23 +118,24 @@ if __name__ == "__main__":
     for epoch in range(opt.epochs):
         model.train()
         start_time = time.time()
+        
         for batch_i, (_, imgs, targets) in enumerate(dataloader):
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
-            output = model(imgs)
+            output = model(imgs,[])
             #print(output)
             loss =  criterion(output, targets)
             loss.backward()
-                      
+            
             if batch_i % 1 == 0:
                 optimizer.step()    # Does the update
                 optimizer.zero_grad()
+            
             model.seen += imgs.size(0)
             if batch_i % 100 == 0:
                 print(batch_i,len(dataloader), loss.cpu().detach().numpy())
-                
-        torch.save(model.state_dict(), f"checkpoints/yolov3_cluster_net_%d.pth" % epoch)
-
+        torch.save(model.state_dict(), f"checkpoints/yolov3_cluster_net_%s_%d.pth" % (opt.ckpt_prefix, epoch))
+        '''
         print("Evaluate on ", len(dataloader))
 
         right_predictions = 0
@@ -152,7 +155,7 @@ if __name__ == "__main__":
             all_predictions += len(targets)
 
         print(epoch, "Accuracy on Training = ", 100.0*right_predictions/all_predictions)
-
+        '''
         dataset_valid = ClustersDataset(valid_path, augment=True, multiscale=False,  clusters=clusters)
 
         dataloader_valid = torch.utils.data.DataLoader(
@@ -173,19 +176,19 @@ if __name__ == "__main__":
             imgs = Variable(imgs.to(device))
             targets = Variable(targets.to(device), requires_grad=False)
 
-            output = model(imgs)
+            output = model(imgs,[])
             loss = criterion(output, targets)
 
             output = torch.argmax(output.cpu(), dim=1).numpy()
             targets = torch.argmax(targets.cpu(), dim=1).numpy()
-    
+
             right_predictions += np.count_nonzero(targets==output)
             all_predictions += len(targets)
-
+            
         print(epoch, "Accuracy of Validation = ", 100.0*right_predictions/all_predictions)
         if best_accuracy < right_predictions/all_predictions:
             best_accuracy = right_predictions/all_predictions
             best_model = model
     
     print("Saving best model with accuracy", best_accuracy)
-    torch.save(best_model.state_dict(), "checkpoints/yolov3_cluster_net.pth")
+    torch.save(best_model.state_dict(), f"checkpoints/yolov3_cluster_net_%s.pth" % opt.ckpt_prefix)

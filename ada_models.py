@@ -109,18 +109,19 @@ class ClusterModel(nn.Module):
         self.seen = 0
         self.fc1 = nn.Linear(144, 64)
         self.fc2 = nn.Linear(64, self.num_all_classes)
+        self.shared_layers = 0
 
-    def forward(self, x):
-        layer_outputs = []
+    def forward(self, x, layer_outputs=[]):
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
+            if i < self.shared_layers:
+                continue
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             layer_outputs.append(x)
-            #print(i, module_def["type"], x.shape)
+
         x = x.view(-1, self.num_flat_features(x))
-        #print(x.shape)
         x = F.leaky_relu(self.fc1(x),0.1)
         x = self.fc2(x)
         return F.softmax(x)
@@ -141,19 +142,18 @@ class ClusterModel(nn.Module):
             self.header_info = header  # Needed to write header when saving weights
             self.seen = header[3]  # number of images seen during training
             weights = np.fromfile(f, dtype=np.float32)  # The rest are weights
-
+        
         # Establish cutoff for loading backbone weights
-        cutoff = 0
+        cutoff = layer_cutoff_idx
         if "darknet53.conv.74" in weights_path:
-            cutoff = 75
-
-        cutoff = min(cutoff, layer_cutoff_idx)
-
+            cutoff = min(cutoff, 75)
+        
         ptr = 0
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
-            if i == cutoff:
+            if i > cutoff:
                 break
             if module_def["type"] == "convolutional":
+                print("layer", i, "loaded")
                 conv_layer = module[0]
                 if module_def["batch_normalize"]:
                     # Load BN bias, weights, running mean and running variance
@@ -202,6 +202,9 @@ class AdaptiveYOLO(nn.Module):
         self.mode_dicts_class_to_cluster = None
         self.mode_classes_list = None
         self.num_all_classes = 0
+        # Set the parameters bellow parameters to use shared weights
+        self.classification_model = None
+        self.shared_layers = -1
 
     def forward(self, x, targets=None):
         # Modify the targets to the cluster targets
@@ -211,7 +214,6 @@ class AdaptiveYOLO(nn.Module):
 
             modified_targets = targets.clone()
             active_classes = self.mode_classes_list[self.mode]
-            # print("Active classes are ", active_classes)
             print("Class to Cluster mapping is ", self.mode_dicts_class_to_cluster[self.mode])
             to_delete = []
             for i, ele in enumerate(modified_targets[:,1]):
@@ -219,7 +221,6 @@ class AdaptiveYOLO(nn.Module):
                     modified_targets[i,1] = torch.tensor(self.mode_dicts_class_to_cluster[self.mode][int(ele)], dtype=torch.float64, device=x.get_device())
                 else:
                     to_delete.append(i)
-            # print(">>>>>>>>>>>> ", len(to_delete), " Deleted ", modified_targets.shape[0], "Remaining ")
             to_delete.sort(reverse=True)
             for i in to_delete:      
                 if i == modified_targets.shape[0] -1: # Last element
@@ -232,14 +233,25 @@ class AdaptiveYOLO(nn.Module):
             if modified_targets.shape[0] == 0:
                 return (0, None)
 
-        # print("Modified Targets are ", modified_targets[:,1], modified_targets.shape)
-
+        if (self.shared_layers == -1) and (self.classification_model is not None):
+            self.mode = torch.argmax(self.classification_model(x,[]), dim=1)[0]
+        '''
+        for i, (module_def, mdc, module, mc) in enumerate(zip(self.module_defs, self.classification_model.module_defs, self.module_list, self.classification_model.module_list)):
+             if i >= self.shared_layers:
+                 break
+             if module_def["type"] in ["convolutional"]:
+                print(i,module[0].weight - mc[0].weight)
+                print(i,module[1].weight - mc[1].weight)
+        '''
         img_dim = x.shape[2]
         loss = 0
         skip = False
         layer_outputs, yolo_outputs = [], []
         current_branch = -1
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
+            if (i == self.shared_layers) and (self.classification_model is not None):
+                self.mode = torch.argmax(self.classification_model(x.clone(),layer_outputs.copy()), dim=1)[0]
+
             if skip == True and module_def["type"] != "branch":
                 continue
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
@@ -261,8 +273,6 @@ class AdaptiveYOLO(nn.Module):
                 loss += layer_loss
                 yolo_outputs.append(x)
             layer_outputs.append(x)
-            #print(i, module_def["type"], x.shape)
-
 
         # Convert back the internal cluster based labels to original labels
         for l, layer in enumerate(yolo_outputs):
@@ -290,17 +300,16 @@ class AdaptiveYOLO(nn.Module):
             weights = np.fromfile(f, dtype=np.float32)  # The rest are weights
 
         # Establish cutoff for loading backbone weights
-        cutoff = 0
+        cutoff = layer_cutoff_idx
         if "darknet53.conv.74" in weights_path:
-            cutoff = 75
+            cutoff = min(cutoff, 75)
 
-        cutoff = min(cutoff, layer_cutoff_idx)
-        
         ptr = 0
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
-            if i == cutoff:
+            if i > cutoff:
                 break
             if module_def["type"] == "convolutional":
+                print("layer", i, "loaded")
                 conv_layer = module[0]
                 if module_def["batch_normalize"]:
                     # Load BN bias, weights, running mean and running variance
