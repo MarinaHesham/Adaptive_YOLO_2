@@ -74,7 +74,7 @@ class ListDataset(Dataset):
             self.img_files = file.readlines()
 
         self.label_files = [
-            path.replace("images", "labels_sub").replace(".png", ".txt").replace(".jpg", ".txt")
+            path.replace("images", "labels").replace(".png", ".txt").replace(".jpg", ".txt")
             for path in self.img_files
         ]
         self.img_size = img_size
@@ -93,7 +93,6 @@ class ListDataset(Dataset):
         # ---------
 
         img_path = self.img_files[index % len(self.img_files)].rstrip()
-
         # Extract image as PyTorch tensor
         # img = transforms.ToTensor()(Image.open(img_path).convert('RGB'))
         img = transforms.ToTensor()(cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB))
@@ -141,7 +140,8 @@ class ListDataset(Dataset):
         if self.augment:
             if np.random.random() < 0.5:
                 img, targets = horisontal_flip(img, targets)
-
+        if targets == None: 
+            print(img_path)
         return img_path, img, targets
 
     def collate_fn(self, batch):
@@ -172,7 +172,7 @@ class ClustersDataset(Dataset):
             self.img_files = file.readlines()
 
         self.label_files = [
-            path.replace("images", "labels_sub").replace(".png", ".txt").replace(".jpg", ".txt")
+            path.replace("images", "labels").replace(".png", ".txt").replace(".jpg", ".txt")
             for path in self.img_files
         ]
         self.img_size = img_size
