@@ -22,6 +22,7 @@ from torchvision import transforms
 from torch.autograd import Variable
 import torch.optim as optim
 
+from ptflops import get_model_complexity_info
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -30,7 +31,7 @@ if __name__ == "__main__":
     parser.add_argument("--gradient_accumulations", type=int, default=2, help="number of gradient accums before step")
     parser.add_argument("--model_def", type=str, default="config/yolov3-tiny.cfg", help="path to model definition file")
     parser.add_argument("--data_config", type=str, default="config/coco.data", help="path to data config file")
-    parser.add_argument("--pretrained_weights", type=str, default="weights/yolov3-tiny.weights", help="if specified starts from checkpoint model")
+    parser.add_argument("--pretrained_weights", type=str, help="if specified starts from checkpoint model")
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_interval", type=int, default=100, help="interval between saving model weights")
@@ -113,6 +114,11 @@ if __name__ == "__main__":
         "conf_obj",
         "conf_noobj",
     ]
+
+    with torch.cuda.device(0):
+        macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
+        print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+        print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
     #### Alternate between clusters at each epoch
     mode_i = 0

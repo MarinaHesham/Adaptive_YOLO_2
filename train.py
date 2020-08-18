@@ -22,6 +22,8 @@ from torchvision import transforms
 from torch.autograd import Variable
 import torch.optim as optim
 
+from ptflops import get_model_complexity_info
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100, help="number of epochs")
@@ -96,6 +98,11 @@ if __name__ == "__main__":
 
     best_model = model
     best_map = 0
+
+    with torch.cuda.device(0):
+        macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
+        print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+        print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
     for epoch in range(opt.epochs):
         model.train()
