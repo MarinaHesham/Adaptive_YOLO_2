@@ -54,7 +54,7 @@ def create_modules(module_defs):
 
         elif module_def["type"] == "branch":
             if split_idx == -1:
-                split_idx = module_i-1
+                split_idx = module_i
             modules.add_module(f"branch_{module_i}", EmptyLayer())
             new_branch = True
 
