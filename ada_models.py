@@ -107,7 +107,7 @@ class ClusterModel(nn.Module):
         self.img_size = img_size
         self.num_all_classes = out_classes
         self.seen = 0
-        self.fc1 = nn.Linear(144, 64)
+        self.fc1 = nn.Linear(128, 64)
         self.fc2 = nn.Linear(64, self.num_all_classes)
         self.shared_layers = 0
 
