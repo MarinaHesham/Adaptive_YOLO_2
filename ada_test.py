@@ -50,10 +50,12 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
         # Select mode
         prev_time = time.time()
         if max_bound:
-             if targets[:, 1].tolist()[0] < 3:
-                 model.mode = 0
-             else:
-                 model.mode = 1 
+            t = targets[:, 1].tolist()[0]
+            cluster_cnt = np.zeros(len(model.mode_classes_list))
+            for i, cluster in enumerate(model.mode_classes_list):
+                if t in cluster:
+                    cluster_cnt[i] += 1
+            model.mode = np.argmax(cluster_cnt)
         else:
             model.mode = random.randint(0, 1)
         
@@ -97,9 +99,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_config", type=str, default="config/coco.data", help="path to data config file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
-    parser.add_argument("--iou_thres", type=float, default=0.3, help="iou threshold required to qualify as detected")
+    parser.add_argument("--iou_thres", type=float, default=0.5, help="iou threshold required to qualify as detected")
     parser.add_argument("--conf_thres", type=float, default=0.5, help="object confidence threshold")
-    parser.add_argument("--nms_thres", type=float, default=0.3, help="iou thresshold for non-maximum suppression")
+    parser.add_argument("--nms_thres", type=float, default=0.5, help="iou thresshold for non-maximum suppression")
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
@@ -170,20 +172,44 @@ if __name__ == "__main__":
         macs, params = get_model_complexity_info(model, (3, 416, 416), as_strings=True, print_per_layer_stat=True, verbose=True)
         print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
         print('{:<30}  {:<8}'.format('Number of parameters: ', params))
-    
-    precision, recall, AP, f1, ap_class = evaluate(
-        model,
-        path=valid_path,
-        iou_thres=opt.iou_thres,
-        conf_thres=opt.conf_thres,
-        nms_thres=opt.nms_thres,
-        img_size=opt.img_size,
-        batch_size=opt.batch_size,
-        max_bound=opt.max_bound,
-    )
+   
+    if opt.iou_thres == -1:
+        ap5_95 = []
+        for iou_thres in np.arange(0.5,0.95,0.05):
+            print("Evaluating at IOU_thres = ", iou_thres)
+            precision, recall, AP, f1, ap_class = evaluate(
+                model,
+                path=valid_path,
+                iou_thres=iou_thres,
+                conf_thres=opt.conf_thres,
+                nms_thres=opt.nms_thres,
+                img_size=opt.img_size,
+                batch_size=opt.batch_size,
+                max_bound=opt.max_bound,
+            )
 
-    print("Average Precisions:")
-    for i, c in enumerate(ap_class):
-        print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
+            print("Average Precisions:")
+            for i, c in enumerate(ap_class):
+                print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
 
-    print(f"mAP: {AP.mean()}")
+            print(f"mAP: {AP.mean()}")
+            ap5_95.append(AP.mean())
+        print(ap5_95, "mAP(0.5:0.95) = ", sum(ap5_95)/len(ap5_95))
+        
+    else:
+        precision, recall, AP, f1, ap_class = evaluate(
+            model,
+            path=valid_path,
+            iou_thres=opt.iou_thres,
+            conf_thres=opt.conf_thres,
+            nms_thres=opt.nms_thres,
+            img_size=opt.img_size,
+            batch_size=opt.batch_size,
+            max_bound=opt.max_bound,
+        )
+
+        print("Average Precisions:")
+        for i, c in enumerate(ap_class):
+            print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
+
+        print(f"mAP: {AP.mean()}")

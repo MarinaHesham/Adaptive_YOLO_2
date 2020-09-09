@@ -113,18 +113,42 @@ if __name__ == "__main__":
         print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
         print('{:<30}  {:<8}'.format('Number of parameters: ', params))
 
-    precision, recall, AP, f1, ap_class = evaluate(
-        model,
-        path=valid_path,
-        iou_thres=opt.iou_thres,
-        conf_thres=opt.conf_thres,
-        nms_thres=opt.nms_thres,
-        img_size=opt.img_size,
-        batch_size=opt.batch_size,
-    )
+    if opt.iou_thres == -1:
+        ap5_95 = []
+        for iou_thres in np.arange(0.5,0.95,0.05):
+            print("Evaluating at IOU_thres = ", iou_thres)
+            precision, recall, AP, f1, ap_class = evaluate(
+                model,
+                path=valid_path,
+                iou_thres=iou_thres,
+                conf_thres=opt.conf_thres,
+                nms_thres=opt.nms_thres,
+                img_size=opt.img_size,
+                batch_size=opt.batch_size,
+            )
 
-    print("Average Precisions:")
-    for i, c in enumerate(ap_class):
-        print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
+            print("Average Precisions:")
+            for i, c in enumerate(ap_class):
+                print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
 
-    print(f"mAP: {AP.mean()}")
+            print(f"mAP: {AP.mean()}")
+            ap5_95.append(AP.mean())
+        print(ap5_95, "mAP(0.5:0.95) = ", sum(ap5_95)/len(ap5_95))
+
+    else:
+        precision, recall, AP, f1, ap_class = evaluate(
+            model,
+            path=valid_path,
+            iou_thres=opt.iou_thres,
+            conf_thres=opt.conf_thres,
+            nms_thres=opt.nms_thres,
+            img_size=opt.img_size,
+            batch_size=opt.batch_size,
+        )
+
+        print("Average Precisions:")
+        for i, c in enumerate(ap_class):
+            print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
+
+        print(f"mAP: {AP.mean()}")
+
