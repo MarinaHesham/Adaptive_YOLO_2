@@ -15,7 +15,8 @@ import time
 import datetime
 import argparse
 
-import torch
+import torch, torch.nn as nn
+
 from torch.utils.data import DataLoader, Sampler
 from torchvision import datasets
 from torchvision import transforms
@@ -38,8 +39,10 @@ if __name__ == "__main__":
     parser.add_argument("--evaluation_interval", type=int, default=1, help="interval evaluations on validation set")
     parser.add_argument("--compute_map", default=False, help="if True computes mAP every tenth batch")
     parser.add_argument("--multiscale_training", default=True, help="allow for multi-scale training")
-    parser.add_argument("--frozen_pretrained_layers", type = int, default=0, help="number of the front layers that should be loaded from pretrained weights")
+    parser.add_argument("--frozen_pretrained_layers", type = int, default=-1, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
+    parser.add_argument("--ckpt_prefix", type=str, default="", help="pre for checkpoints files")
+
     opt = parser.parse_args()
     print(opt)
 
@@ -194,7 +197,7 @@ if __name__ == "__main__":
 
             model.seen += imgs.size(0)
 
-        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
+        torch.save(model.state_dict(), f"checkpoints/%s_yolov3_ckpt_clus%d_%d.pth" %(opt.ckpt_prefix, mode_i, epoch))
 
         print(f"\n---- Evaluating Model on Cluster ----", mode_i)
         # Evaluate the model on the validation set
@@ -202,7 +205,7 @@ if __name__ == "__main__":
             model,
             path=valid_path,
             iou_thres=0.3,
-            conf_thres=0.5,
+            conf_thres=0.3,
             nms_thres=0.3,
             img_size=opt.img_size,
             batch_size=1,
@@ -226,10 +229,9 @@ if __name__ == "__main__":
             best_map = AP.mean()
             best_model = model
 
-        torch.save(model.state_dict(), f"checkpoints/yolov3_ckpt_clus%d_%d.pth" %(mode_i, epoch))
         mode_i = (mode_i + 1) % len(clusters)
 
     print("Saving best model of mAP", best_map)
 
-    best_model.save_darknet_weights("weights/yolov3_ada.weights")
-    torch.save(best_model.state_dict(), "checkpoints/yolov3_ada.pth")
+    best_model.save_darknet_weights("weights/%s_yolov3_ada.weights" % opt.ckpt_prefix)
+    torch.save(best_model.state_dict(), f"checkpoints/%s_yolov3_ada.pth" % opt.ckpt_prefix)

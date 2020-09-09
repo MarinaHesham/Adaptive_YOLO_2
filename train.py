@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 conf_thres=0.5,
                 nms_thres=0.3,
                 img_size=opt.img_size,
-                batch_size=1,
+                batch_size=8,
             )
             evaluation_metrics = [
                 ("val_precision", precision.mean()),

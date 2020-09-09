@@ -52,6 +52,8 @@ if __name__ == "__main__":
     parser.add_argument("--frozen_pretrained_layers", type = int, default=0, help="number of the front layers that should be loaded from pretrained weights")
     parser.add_argument("--clusters_path", type=str, default="clusters.data", help="clusters file path")
     parser.add_argument("--ckpt_prefix", type=str, default="", help="pre for checkpoints files")
+    parser.add_argument("--ckpt_postfix", type=str, default="", help="post for checkpoints files")
+
 
     opt = parser.parse_args()
     print(opt)
@@ -134,7 +136,7 @@ if __name__ == "__main__":
             model.seen += imgs.size(0)
             if batch_i % 100 == 0:
                 print(batch_i,len(dataloader), loss.cpu().detach().numpy())
-        torch.save(model.state_dict(), f"checkpoints/yolov3_cluster_net_%s_%d.pth" % (opt.ckpt_prefix, epoch))
+        torch.save(model.state_dict(), f"checkpoints/%s_yolov3_cluster_net_%s_%d.pth" % (opt.ckpt_prefix, opt.ckpt_postfix, epoch))
         '''
         print("Evaluate on ", len(dataloader))
 
@@ -191,4 +193,4 @@ if __name__ == "__main__":
             best_model = model
     
     print("Saving best model with accuracy", best_accuracy)
-    torch.save(best_model.state_dict(), f"checkpoints/yolov3_cluster_net_%s.pth" % opt.ckpt_prefix)
+    torch.save(best_model.state_dict(), f"checkpoints/%s_yolov3_cluster_net_%s.pth" % (opt.ckpt_prefix, opt.ckpt_postfix))
