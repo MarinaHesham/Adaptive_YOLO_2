@@ -23,7 +23,7 @@ from ptflops import get_model_complexity_info
 
 def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, max_bound=False, c_model=None):
     model.eval()
-
+    common_classes = [0,1,2,7,13,16,24,25,26,27,39,41,45,56,58,60,67,73,74]
     # Get dataloader
     dataset = ListDataset(path, img_size=img_size, augment=False, multiscale=False)
     dataloader = torch.utils.data.DataLoader(
@@ -38,6 +38,8 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
 
     labels = []
     sample_metrics = []  # List of tuples (TP, confs, pred)
+    neglected_objects = 0
+    all_objects = 1
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
         # Extract labels
         labels += targets[:, 1].tolist()
@@ -50,15 +52,21 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
         # Select mode
         prev_time = time.time()
         if max_bound:
-            t = targets[:, 1].tolist()[0]
+            # print(targets[:, 1].tolist())
+            ts = targets[:, 1].tolist()
             cluster_cnt = np.zeros(len(model.mode_classes_list))
-            for i, cluster in enumerate(model.mode_classes_list):
-                if t in cluster:
-                    cluster_cnt[i] += 1
+            for t in ts:
+                for i, cluster in enumerate(model.mode_classes_list):
+                    if t in cluster and t not in common_classes:
+                        cluster_cnt[i] += 1
+            # print("Cluster Count", cluster_cnt, "Chosen Max", np.argmax(cluster_cnt))
+            neglected_objects += np.sum(cluster_cnt) - np.max(cluster_cnt)
+            all_objects += np.sum(cluster_cnt)
+            # print("Neglected/All Objects = ", neglected_objects, "/", all_objects)
+
             model.mode = np.argmax(cluster_cnt)
         else:
             model.mode = random.randint(0, 1)
-        
         current_time = time.time()
         inference_time = datetime.timedelta(seconds=current_time - prev_time)
         prev_time = current_time
@@ -80,6 +88,8 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
             prev_time = current_time
             non_max_suppression_time += inference_time
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
+    
+    print("Neglected/All Objects = ", 100.0*neglected_objects/all_objects)
 
     print("Classification time is ", classification_time, "Average per image is ", (classification_time/len(dataloader)).microseconds/1000, "ms")
     print("Detection time is ", detection_time, "Average per image is ", (detection_time/len(dataloader)).microseconds/1000, "ms")
@@ -195,7 +205,28 @@ if __name__ == "__main__":
             print(f"mAP: {AP.mean()}")
             ap5_95.append(AP.mean())
         print(ap5_95, "mAP(0.5:0.95) = ", sum(ap5_95)/len(ap5_95))
-        
+    elif opt.nms_thres == -1:
+        ap5_95 = []
+        for nms_thres in np.arange(0.1,0.75,0.05):
+            print("Evaluating at nms thresh = ", nms_thres)
+            precision, recall, AP, f1, ap_class = evaluate(
+                model,
+                path=valid_path,
+                iou_thres=opt.iou_thres,
+                conf_thres=opt.conf_thres,
+                nms_thres=nms_thres,
+                img_size=opt.img_size,
+                batch_size=opt.batch_size,
+                max_bound=opt.max_bound,
+            )
+
+            print("Average Precisions:")
+            for i, c in enumerate(ap_class):
+                print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
+
+            print(f"mAP: {AP.mean()}")
+            ap5_95.append(AP.mean())
+        print(ap5_95, "mAP(0.1:0.755) = ", sum(ap5_95)/len(ap5_95))        
     else:
         precision, recall, AP, f1, ap_class = evaluate(
             model,
@@ -213,3 +244,4 @@ if __name__ == "__main__":
             print(f"+ Class '{c}' ({class_names[c]}) - AP: {AP[i]}")
 
         print(f"mAP: {AP.mean()}")
+        print(AP.sum())
