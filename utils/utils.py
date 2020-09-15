@@ -12,6 +12,40 @@ import matplotlib.patches as patches
 
 from prettytable import PrettyTable
 
+def map_labels_to_cluster(targets, clusters_list, class_to_cluster_list, target_cluster, device=None):
+    modified_targets = targets.clone()
+    active_classes = clusters_list[target_cluster]
+    to_delete = []
+    for i, ele in enumerate(modified_targets[:,1]):
+        if ele in active_classes:
+            modified_targets[i,1] = torch.tensor(class_to_cluster_list[target_cluster][int(ele)], dtype=torch.float64, device=device)
+        else:
+            to_delete.append(i)
+    
+    to_delete.sort(reverse=True)
+
+    for i in to_delete:      
+        if i == modified_targets.shape[0] -1: # Last element
+            modified_targets = modified_targets[0:i] # remove the last row
+        elif i == 0: # First element
+            modified_targets = modified_targets[1:] # remove the first row
+        else: # otherwise
+            modified_targets = torch.cat([modified_targets[0:i], modified_targets[i+1:]]) # remove the current row
+
+    return modified_targets
+
+def get_class_to_cluster_map(clusters_list):
+    class_to_cluster_list = []
+    ## create the class-cluster map to be used for labels in split training
+    for cluster in clusters_list:
+        class_to_cluster = {}
+        for i, element in enumerate(cluster):
+            class_to_cluster[element] = i
+
+        class_to_cluster_list.append(class_to_cluster)
+
+    return class_to_cluster_list
+    
 def count_parameters(model):
     table = PrettyTable(["Modules", "Parameters"])
     total_params = 0

@@ -101,6 +101,56 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     precision, recall, AP, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, labels)
     return precision, recall, AP, f1, ap_class
 
+def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, clusters_path, clusters_idx, device=None):
+    model.eval()
+
+    clusters = parse_clusters_config(clusters_path)
+
+    # Get dataloader
+    dataset = ListDataset(path, img_size=img_size, augment=False, multiscale=False)
+    dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=False, num_workers=1, collate_fn=dataset.collate_fn
+    )
+
+    Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+
+    labels = []
+    sample_metrics = []  # List of tuples (TP, confs, pred)
+
+    for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
+        # Extract labels
+        labels += targets[:, 1].tolist()
+
+        # Rescale target
+        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
+        targets[:, 2:] *= img_size
+    
+        imgs = Variable(imgs.type(Tensor), requires_grad=False)
+        
+        with torch.no_grad():
+            backbone_out = backbone(imgs)
+            outputs = model(backbone_out)
+            # print(outputs[0,0])
+            # print(class_to_cluster_list)
+            temp = torch.zeros(outputs.shape[0], outputs.shape[1], 80+5-outputs.shape[-1])
+            outputs = torch.cat((outputs,temp), dim=2)
+
+            new_indices = [5 + k for k in clusters[clusters_idx]]
+            outputs[:, :, new_indices] = outputs[:, :, 5:5+len(new_indices)]
+            # print(outputs[0,0])
+            # print("OUT SHAPE ", outputs[0].shape)
+
+            outputs = non_max_suppression(outputs, conf_thres=conf_thres, nms_thres=nms_thres)
+        #     print("OUT SHAPE ", outputs[0].shape)
+        # print(outputs)
+        # print("Targers", targets)
+        sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
+
+    # Concatenate sample statistics
+    true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
+    precision, recall, AP, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, labels)
+    return precision, recall, AP, f1, ap_class
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
