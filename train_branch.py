@@ -76,6 +76,8 @@ if __name__ == "__main__":
     print("Branch Number of Parameters")
     count_parameters(branch)
 
+    branch.apply(weights_init_normal)
+
     # If specified we start from checkpoint
     if opt.pretrained_weights:
         if opt.pretrained_weights.endswith(".pth"):
@@ -83,7 +85,6 @@ if __name__ == "__main__":
         else:
             branch.load_darknet_weights(opt.pretrained_weights,opt.frozen_pretrained_layers)
 
-    branch.apply(weights_init_normal)
     
     optimizer = torch.optim.Adam(branch.parameters())
 
@@ -146,7 +147,7 @@ if __name__ == "__main__":
             backbone_out = backbone(imgs)
 
             # 6. pass output of backbone to branch model for training
-            loss, outputs = branch(backbone_out, targets)
+            loss, outputs = branch(backbone_out, imgs.shape[2], targets)
 
             if outputs == None:
                 continue
@@ -201,7 +202,7 @@ if __name__ == "__main__":
             branch,
             path=valid_path,
             iou_thres=0.5,
-            conf_thres=0.3,
+            conf_thres=0.01,
             nms_thres=0.5,
             img_size=opt.img_size,
             batch_size=1,
