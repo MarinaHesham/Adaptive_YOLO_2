@@ -366,3 +366,7 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
 
     tconf = obj_mask.float()
     return iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf
+
+def argNmaxelements(K, N): 
+    K = sorted(range(len(K)), key=lambda x: K[x])[-1*N:]
+    return sorted(K)

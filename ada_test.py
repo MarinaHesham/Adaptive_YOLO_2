@@ -40,6 +40,7 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     sample_metrics = []  # List of tuples (TP, confs, pred)
     neglected_objects = 0
     all_objects = 1
+    exec_branches = 0
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
         # Extract labels
         labels += targets[:, 1].tolist()
@@ -60,11 +61,16 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
                     if t in cluster and t not in common_classes:
                         cluster_cnt[i] += 1
             # print("Cluster Count", cluster_cnt, "Chosen Max", np.argmax(cluster_cnt))
-            neglected_objects += np.sum(cluster_cnt) - np.max(cluster_cnt)
+            dominent_clus = argNmaxelements(cluster_cnt, 1)
+            #dominent_clus = [idx for idx, val in enumerate(cluster_cnt) if val != 0] 
+            if len(dominent_clus) == 0:
+                dominent_clus = [0]
+            #print(cluster_cnt, dominent_clus)
+            neglected_objects += np.sum(cluster_cnt) - np.sum(cluster_cnt[dominent_clus])
             all_objects += np.sum(cluster_cnt)
             # print("Neglected/All Objects = ", neglected_objects, "/", all_objects)
-
-            model.mode = np.argmax(cluster_cnt)
+            exec_branches += len(dominent_clus)
+            model.modes = dominent_clus
         else:
             model.mode = random.randint(0, 1)
         current_time = time.time()
@@ -90,7 +96,7 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
     
     print("Neglected/All Objects = ", 100.0*neglected_objects/all_objects)
-
+    print("Average branches per image = ", exec_branches/len(dataloader))
     print("Classification time is ", classification_time, "Average per image is ", (classification_time/len(dataloader)).microseconds/1000, "ms")
     print("Detection time is ", detection_time, "Average per image is ", (detection_time/len(dataloader)).microseconds/1000, "ms")
     print("NMS time is ", non_max_suppression_time, "Average per image is ", (non_max_suppression_time/len(dataloader)).microseconds/1000, "ms")
@@ -129,21 +135,16 @@ def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img
         
         with torch.no_grad():
             backbone_out = backbone(imgs)
-            outputs = model(backbone_out)
-            # print(outputs[0,0])
-            # print(class_to_cluster_list)
-            temp = torch.zeros(outputs.shape[0], outputs.shape[1], 80+5-outputs.shape[-1])
+            outputs = model(backbone_out, imgs.shape[2])
+            temp = torch.zeros(len(outputs), outputs[0].shape[0], 80+5-outputs[0].shape[-1])
             outputs = torch.cat((outputs,temp), dim=2)
 
             new_indices = [5 + k for k in clusters[clusters_idx]]
-            outputs[:, :, new_indices] = outputs[:, :, 5:5+len(new_indices)]
-            # print(outputs[0,0])
-            # print("OUT SHAPE ", outputs[0].shape)
+            
+            outputs[0][ :, new_indices] = outputs[0][ :, 5:5+len(new_indices)]
 
             outputs = non_max_suppression(outputs, conf_thres=conf_thres, nms_thres=nms_thres)
-        #     print("OUT SHAPE ", outputs[0].shape)
-        # print(outputs)
-        # print("Targers", targets)
+        
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
 
     # Concatenate sample statistics

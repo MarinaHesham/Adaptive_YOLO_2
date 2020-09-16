@@ -198,7 +198,7 @@ class AdaptiveYOLO(nn.Module):
         self.img_size = img_size
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
-        self.mode = 0
+        self.modes = [0,1]
         self.mode_dicts_class_to_cluster = None
         self.mode_classes_list = None
         self.num_all_classes = 0
@@ -234,7 +234,7 @@ class AdaptiveYOLO(nn.Module):
                 return (0, None)
 
         if (self.shared_layers == -1) and (self.classification_model is not None):
-            self.mode = torch.argmax(self.classification_model(x,[]), dim=1)[0]
+            self.modes = [torch.argmax(self.classification_model(x,[]), dim=1)[0]]
         '''
         for i, (module_def, mdc, module, mc) in enumerate(zip(self.module_defs, self.classification_model.module_defs, self.module_list, self.classification_model.module_list)):
              if i >= self.shared_layers:
@@ -248,21 +248,26 @@ class AdaptiveYOLO(nn.Module):
         skip = False
         layer_outputs, yolo_outputs = [], []
         current_branch = -1
+        backbone_end_idx = 0
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
-            if (i == self.shared_layers) and (self.classification_model is not None):
-                self.mode = torch.argmax(self.classification_model(x.clone(),layer_outputs.copy()), dim=1)[0]
+            # if (i == self.shared_layers) and (self.classification_model is not None):
+            #     self.mode = torch.argmax(self.classification_model(x.clone(),layer_outputs.copy()), dim=1)[0]
 
             if skip == True and module_def["type"] != "branch":
                 continue
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
             elif module_def["type"] == "branch":
+                if current_branch == -1:
+                    # first branch 
+                    backbone_end_idx = i-1
                 current_branch += 1
-                if self.mode != current_branch:
+                if current_branch not in self.modes:
                     skip = True
                     continue
                 else:
                     skip = False
+                    x = layer_outputs[backbone_end_idx]
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":
@@ -275,15 +280,20 @@ class AdaptiveYOLO(nn.Module):
             layer_outputs.append(x)
 
         # Convert back the internal cluster based labels to original labels
+        layers_per_mode = len(yolo_outputs)*1.0/len(self.modes)
+        i = -1
         for l, layer in enumerate(yolo_outputs):
+            if l % layers_per_mode == 0:
+                i += 1
             temp = torch.zeros(layer.shape[0],layer.shape[1],self.num_all_classes+5-layer.shape[-1], device=x.get_device())
             yolo_outputs[l] = torch.cat((layer,temp), dim=2)
 
             full_detection = torch.zeros(layer.shape[0],layer.shape[1], self.num_all_classes+5, device=x.get_device())   
             full_detection[:, :, 0:5] = layer[:, :, 0:5]
-            new_indices = [5 + k for k in self.mode_classes_list[self.mode]]
+            new_indices = [5 + k for k in self.mode_classes_list[self.modes[i]]]
             full_detection[:, :, new_indices] = layer[:, :, 5:]
             yolo_outputs[l] = full_detection
+
 
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         
