@@ -120,7 +120,7 @@ class ClusterModel(nn.Module):
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             layer_outputs.append(x)
-
+            #print(i, x.shape, "clus")
         x = x.view(-1, self.num_flat_features(x))
         x = F.leaky_relu(self.fc1(x),0.1)
         x = self.fc2(x)
@@ -235,6 +235,9 @@ class AdaptiveYOLO(nn.Module):
 
         if (self.shared_layers == -1) and (self.classification_model is not None):
             self.modes = [torch.argmax(self.classification_model(x,[]), dim=1)[0]]
+            #temp = self.classification_model(x,[])[0]
+            #temp = [c.item() for c in temp]
+            #self.modes = [idx for idx, val in enumerate(temp) if val > 0.2] 
         '''
         for i, (module_def, mdc, module, mc) in enumerate(zip(self.module_defs, self.classification_model.module_defs, self.module_list, self.classification_model.module_list)):
              if i >= self.shared_layers:
@@ -250,9 +253,14 @@ class AdaptiveYOLO(nn.Module):
         current_branch = -1
         backbone_end_idx = 0
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
-            # if (i == self.shared_layers) and (self.classification_model is not None):
-            #     self.mode = torch.argmax(self.classification_model(x.clone(),layer_outputs.copy()), dim=1)[0]
-
+            if (i == self.shared_layers) and (self.classification_model is not None):
+                self.modes = [torch.argmax(self.classification_model(x.clone(),layer_outputs.copy()), dim=1)[0]]
+                #class_out = self.classification_model(x.clone(),layer_outputs.copy())
+                #print(class_out)
+                #tmp = [c.item() for c in class_out[0]]
+                #self.modes = [idx for idx, val in enumerate(tmp) if val > 0.2]                
+                #self.modes = [torch.argmax(class_out, dim=1).item()]
+                #print(class_out, self.modes)
             if skip == True and module_def["type"] != "branch":
                 continue
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
@@ -277,6 +285,7 @@ class AdaptiveYOLO(nn.Module):
                 x, layer_loss = module[0](x, modified_targets, img_dim)
                 loss += layer_loss
                 yolo_outputs.append(x)
+            #print(i, x.shape)
             layer_outputs.append(x)
 
         # Convert back the internal cluster based labels to original labels
