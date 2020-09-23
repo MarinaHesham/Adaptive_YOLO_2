@@ -11,7 +11,7 @@ for testing run
 
 ## 2. Adaptive Object Detection 
 Our adaptive model has 3 main parts: backbone, detection head and branch controller as shown in the figure bellow.
-<img src="adaptive.png" width="70%" style="display: block;  margin: 0 auto;">
+<img src="figs/adaptive.png" width="70%" style="display: block;  margin: 0 auto;">
 
 We experimented two different training techniques for the backbone, detection and the branch controller.
 
