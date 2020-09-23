@@ -130,7 +130,7 @@ def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img
         
         with torch.no_grad():
             backbone_out = backbone(imgs)
-            outputs = branch(backbone_out, img_dim=imgs.shape[2], layer_outputs=backbone.layer_outputs)
+            outputs = model(backbone_out, img_dim=imgs.shape[2], layer_outputs=backbone.layer_outputs)
             backbone.layer_outputs = []            
             temp = torch.zeros(len(outputs), outputs[0].shape[0], 80+5-outputs[0].shape[-1])
             outputs = torch.cat((outputs,temp), dim=2)
@@ -140,7 +140,7 @@ def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img
             outputs[0][ :, new_indices] = outputs[0][ :, 5:5+len(new_indices)]
 
             outputs = non_max_suppression(outputs, conf_thres=conf_thres, nms_thres=nms_thres)
-        
+
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
 
     # Concatenate sample statistics
