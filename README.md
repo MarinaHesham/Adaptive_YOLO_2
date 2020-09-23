@@ -22,7 +22,7 @@ In this method, we do simultanous training of backbone and detection head follow
 #### Simulaneously training the backbone and the detection head
 To Train the backbone and detection head using this method, you need:
 
-1. Define the model architecture - we defined two sample model architectures: [Yolov3_ada6.cfg](https://github.com/scale-lab/Adaptive_YOLO/blob/master/config/yolov3-ada6.cfg) for 6-class subset of MS COCO dataset and [Yolov3_ada.cfg](https://github.com/scale-lab/Adaptive_YOLO/blob/master/config/yolov3_ada.cfg) for the full MS COCO dataset.
+1. Define the model architecture - we defined two sample model architectures: [adayolo6.cfg](https://github.com/scale-lab/Adaptive_YOLO/blob/master/config/yolov3-ada6.cfg) for 6-class subset of MS COCO dataset and [adayolo.cfg](https://github.com/scale-lab/Adaptive_YOLO/blob/master/config/yolov3_ada.cfg) for the full MS COCO dataset.
 
 2. Run the training using - `python3 train_adaptive1.py --model_def config/adayolo.cfg --data_config config/coco.data --clusters_path clusters.data --epochs 60 --batch_size 128`
 
