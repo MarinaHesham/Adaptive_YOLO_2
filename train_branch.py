@@ -147,7 +147,9 @@ if __name__ == "__main__":
             backbone_out = backbone(imgs)
 
             # 6. pass output of backbone to branch model for training
-            loss, outputs = branch(backbone_out, imgs.shape[2], targets)
+            print("LAYER OUTPUTS", len(backbone.layer_outputs))
+            loss, outputs = branch(backbone_out, img_dim=imgs.shape[2], targets=targets, layer_outputs=backbone.layer_outputs)
+            backbone.layer_outputs = []
 
             if outputs == None:
                 continue

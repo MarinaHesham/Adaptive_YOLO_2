@@ -60,15 +60,11 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
                 for i, cluster in enumerate(model.mode_classes_list):
                     if t in cluster and t not in common_classes:
                         cluster_cnt[i] += 1
-            # print("Cluster Count", cluster_cnt, "Chosen Max", np.argmax(cluster_cnt))
-            dominent_clus = argNmaxelements(cluster_cnt, 1)
-            #dominent_clus = [idx for idx, val in enumerate(cluster_cnt) if val != 0] 
+            dominent_clus = [idx for idx, val in enumerate(cluster_cnt) if val != 0] 
             if len(dominent_clus) == 0:
                 dominent_clus = [0]
-            #print(cluster_cnt, dominent_clus)
             neglected_objects += np.sum(cluster_cnt) - np.sum(cluster_cnt[dominent_clus])
             all_objects += np.sum(cluster_cnt)
-            # print("Neglected/All Objects = ", neglected_objects, "/", all_objects)
             exec_branches += len(dominent_clus)
             model.modes = dominent_clus
         else:
@@ -94,7 +90,6 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
             prev_time = current_time
             non_max_suppression_time += inference_time
         sample_metrics += get_batch_statistics(outputs, targets, iou_threshold=iou_thres)
-    
     print("Neglected/All Objects = ", 100.0*neglected_objects/all_objects)
     print("Average branches per image = ", exec_branches/len(dataloader))
     print("Classification time is ", classification_time, "Average per image is ", (classification_time/len(dataloader)).microseconds/1000, "ms")
@@ -109,7 +104,7 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
 
 def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size, clusters_path, clusters_idx, device=None):
     model.eval()
-
+    backbone.eval()
     clusters = parse_clusters_config(clusters_path)
 
     # Get dataloader
@@ -135,7 +130,8 @@ def evaluate_branch(backbone, model, path, iou_thres, conf_thres, nms_thres, img
         
         with torch.no_grad():
             backbone_out = backbone(imgs)
-            outputs = model(backbone_out, imgs.shape[2])
+            outputs = branch(backbone_out, img_dim=imgs.shape[2], layer_outputs=backbone.layer_outputs)
+            backbone.layer_outputs = []            
             temp = torch.zeros(len(outputs), outputs[0].shape[0], 80+5-outputs[0].shape[-1])
             outputs = torch.cat((outputs,temp), dim=2)
 

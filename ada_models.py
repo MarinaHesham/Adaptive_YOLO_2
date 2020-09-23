@@ -401,20 +401,22 @@ class Backbone(nn.Module):
         self.img_size = img_size
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
+        self.layer_outputs = []
 
     def forward(self, x):
-        layer_outputs = []
+        self.layer_outputs = []
         for _, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "maxpool"]:
                 x = module(x)
             elif module_def["type"] == "route":
-                x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
+                x = torch.cat([self.layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":
                 layer_i = int(module_def["from"])
-                x = layer_outputs[-1] + layer_outputs[layer_i]
-            layer_outputs.append(x)
+                x = self.layer_outputs[-1] + self.layer_outputs[layer_i]
+            self.layer_outputs.append(x)
         
         return x
+
 
     def load_darknet_weights(self, weights_path, layer_cutoff_idx=0):
         """Parses and loads the weights stored in 'weights_path'"""

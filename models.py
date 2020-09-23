@@ -58,7 +58,11 @@ def create_modules(module_defs):
 
         elif module_def["type"] == "route":
             layers = [int(x) for x in module_def["layers"].split(",")]
-            filters = sum([output_filters[1:][i] for i in layers])
+            if "filters" in module_def:
+                filters = sum([output_filters[1:][layers[i]] for i in range(len(layers)-1)])
+                filters = filters + int(module_def["filters"])
+            else:
+                filters = sum([output_filters[1:][i] for i in layers])
             modules.add_module(f"route_{module_i}", EmptyLayer())
 
         elif module_def["type"] == "shortcut":
@@ -243,11 +247,13 @@ class Darknet(nn.Module):
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
 
-    def forward(self, x, img_dim=None, targets=None):
+    def forward(self, x, img_dim=None, targets=None, layer_outputs=None):
         if img_dim == None:
             img_dim = x.shape[2]
         loss = 0
-        layer_outputs, yolo_outputs = [], []
+        if layer_outputs == None:
+            layer_outputs = []
+        yolo_outputs = []
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
